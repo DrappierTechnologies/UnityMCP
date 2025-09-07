@@ -75,6 +75,15 @@ The framework uses a handler-based architecture with automatic discovery:
 - Command prefix should be lowercase, descriptive (e.g., "hierarchy", "console")
 - Actions use dot notation: `prefix.action` (e.g., "hierarchy.get", "console.clear")
 
+### Patterns & Principles
+- Respect the Single Responsibility principle
+- Respect the Open-Closed principle
+- Respect the Liskov Substitution principle
+- Respect the Interface Segregation principle
+- Respect the Dependency Inversion principle
+- Adhere to Clean Code and Clean Architecture software design
+- Adhere to this projects architecture as much as possible
+
 ## Testing
 
 ### TypeScript Tests
@@ -97,3 +106,6 @@ Test handlers directly in Unity Editor:
 - C# handlers discovered via assembly scanning (internal or public access)
 - Default TCP port is 27182, configurable in Unity preferences
 - Connection uses localhost only for security
+- DO NOT MODIFY THE BASE IMPLEMENTATION only extend
+- DO NOT ATTEMPT TO REWRITE OR REFACTOR SIGNIFICANT PORTIONS OF CODE WITHOUT AUTHORIZATION
+- Roll back changes you make if you've broken something that you cannot quickly fix
