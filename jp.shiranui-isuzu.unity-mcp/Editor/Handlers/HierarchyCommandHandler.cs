@@ -42,7 +42,6 @@ namespace UnityMCP.Editor.Handlers
                 "getchildren" => GetChildren(parameters),
                 "find" => FindGameObjects(parameters),
                 "setactive" => SetActive(parameters),
-                "getcomponents" => GetComponents(parameters),
                 "duplicate" => DuplicateGameObject(parameters),
                 _ => new JObject { ["success"] = false, ["error"] = $"Unknown action: {action}" }
             };
@@ -565,76 +564,6 @@ namespace UnityMCP.Editor.Handlers
             }
         }
 
-        /// <summary>
-        /// Gets all components on a GameObject.
-        /// </summary>
-        private JObject GetComponents(JObject parameters)
-        {
-            try
-            {
-                var path = parameters["path"]?.ToString();
-
-                if (string.IsNullOrEmpty(path))
-                {
-                    return new JObject
-                    {
-                        ["success"] = false,
-                        ["error"] = "Path parameter is required"
-                    };
-                }
-
-                var gameObject = GameObject.Find(path) ?? FindInactiveObjectByPath(path);
-                if (gameObject == null)
-                {
-                    return new JObject
-                    {
-                        ["success"] = false,
-                        ["error"] = $"GameObject not found at path: {path}"
-                    };
-                }
-
-                var components = gameObject.GetComponents<Component>();
-                var componentArray = new JArray();
-
-                foreach (var component in components)
-                {
-                    if (component == null) continue;
-                    
-                    var componentInfo = new JObject
-                    {
-                        ["type"] = component.GetType().Name,
-                        ["fullType"] = component.GetType().FullName,
-                        ["enabled"] = component is Behaviour behaviour ? behaviour.enabled : true
-                    };
-
-                    // Add basic properties for common components
-                    if (component is Transform transform)
-                    {
-                        componentInfo["position"] = JToken.FromObject(transform.position);
-                        componentInfo["rotation"] = JToken.FromObject(transform.rotation.eulerAngles);
-                        componentInfo["scale"] = JToken.FromObject(transform.localScale);
-                    }
-
-                    componentArray.Add(componentInfo);
-                }
-
-                return new JObject
-                {
-                    ["success"] = true,
-                    ["gameObject"] = gameObject.name,
-                    ["components"] = componentArray,
-                    ["count"] = componentArray.Count
-                };
-            }
-            catch (Exception ex)
-            {
-                return new JObject
-                {
-                    ["success"] = false,
-                    ["error"] = ex.Message
-                };
-            }
-        }
 
         /// <summary>
         /// Duplicates a GameObject.
