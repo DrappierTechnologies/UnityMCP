@@ -154,18 +154,6 @@ export class HierarchyCommandHandler extends BaseCommandHandler {
             }
         });
 
-        // hierarchy.getComponents - List GameObject components
-        tools.set("hierarchy_getComponents", {
-            description: "Get all components attached to a GameObject",
-            parameterSchema: {
-                path: z.string().describe("Path to GameObject")
-            },
-            annotations: {
-                title: "Get Components",
-                readOnlyHint: true,
-                openWorldHint: false
-            }
-        });
 
         // hierarchy.duplicate - Clone GameObjects
         tools.set("hierarchy_duplicate", {
@@ -199,7 +187,7 @@ export class HierarchyCommandHandler extends BaseCommandHandler {
             // Validate action
             const validActions = [
                 "get", "create", "delete", "rename", "setparent",
-                "getchildren", "find", "setactive", "getcomponents", "duplicate"
+                "getchildren", "find", "setactive", "duplicate"
             ];
 
             if (!validActions.includes(action.toLowerCase())) {
