@@ -39,7 +39,7 @@ export class HandlerAdapter {
         if (hasParameters) {
 
             // Create resource template
-            // @ts-ignore
+            // @ts-expect-error ResourceTemplate constructor parameter types not fully compatible
             const template = new ResourceTemplate(handler.resourceUriTemplate, {list:undefined});
 
             this.server.resource(
