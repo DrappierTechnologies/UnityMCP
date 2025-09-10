@@ -31,9 +31,13 @@ export class ProjectCommandHandler extends BaseCommandHandler {
         // READ OPERATIONS
         
         tools.set("project_search", {
-            description: "Search for assets in the Unity project using a query string",
+            description: "Search for assets in the Unity project using various criteria",
             parameterSchema: {
                 query: z.string().describe("The search query string"),
+                searchType: z.enum(["name", "type", "content", "all"]).optional().describe("What to search: 'name' for asset names, 'type' for asset types, 'content' for file contents, 'all' for everything (default: 'all')"),
+                assetType: z.string().optional().describe("Filter by specific asset type (e.g., 'Texture2D', 'Material', 'MonoScript')"),
+                folder: z.string().optional().describe("Limit search to specific folder path (e.g., 'Assets/Textures')"),
+                exact: z.boolean().optional().describe("Whether to perform exact match for name searches (default: false)"),
                 limit: z.number().optional().describe("Maximum number of results to return (default: 100)"),
                 includePackages: z.boolean().optional().describe("Include package assets in search (default: false)")
             },
@@ -46,38 +50,6 @@ export class ProjectCommandHandler extends BaseCommandHandler {
             }
         });
 
-        tools.set("project_findByName", {
-            description: "Find assets by name in the Unity project",
-            parameterSchema: {
-                name: z.string().describe("The asset name to search for"),
-                exact: z.boolean().optional().describe("Whether to perform an exact match (default: false)"),
-                limit: z.number().optional().describe("Maximum number of results to return (default: 100)"),
-                includePackages: z.boolean().optional().describe("Include package assets in search (default: false)")
-            },
-            annotations: {
-                title: "Find Assets by Name",
-                readOnlyHint: true,
-                destructiveHint: false,
-                idempotentHint: true,
-                openWorldHint: false
-            }
-        });
-
-        tools.set("project_findByType", {
-            description: "Find assets by type in the Unity project",
-            parameterSchema: {
-                type: z.string().describe("The asset type name to search for (e.g., 'Texture2D', 'Material', 'MonoScript')"),
-                limit: z.number().optional().describe("Maximum number of results to return (default: 100)"),
-                includePackages: z.boolean().optional().describe("Include package assets in search (default: false)")
-            },
-            annotations: {
-                title: "Find Assets by Type",
-                readOnlyHint: true,
-                destructiveHint: false,
-                idempotentHint: true,
-                openWorldHint: false
-            }
-        });
 
         tools.set("project_getInfo", {
             description: "Get detailed information about a specific asset",
@@ -295,7 +267,7 @@ export class ProjectCommandHandler extends BaseCommandHandler {
             // Validate action
             const validActions = [
                 // Read operations
-                "search", "findbyname", "findbytype", "getinfo", "getdependencies", "browse",
+                "search", "getinfo", "getdependencies", "browse",
                 // Create operations  
                 "createfolder", "createasset", "duplicate", "importasset",
                 // Update operations

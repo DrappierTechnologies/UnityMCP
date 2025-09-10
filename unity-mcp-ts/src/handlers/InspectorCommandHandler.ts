@@ -63,12 +63,12 @@ export class InspectorCommandHandler extends BaseCommandHandler {
 
         // inspector.modifyComponent - Modify component properties
         tools.set("inspector_modifyComponent", {
-            description: "Modify properties of a component on a GameObject or prefab asset. For BoxCollider2D, supports 'autoFit: true' to automatically size collider based on sprite transparency bounds.",
+            description: "Modify properties of a component on a GameObject or prefab asset. For 2D colliders (BoxCollider2D, CircleCollider2D, CapsuleCollider2D, PolygonCollider2D, EdgeCollider2D), supports 'autoFit: true' to automatically size/shape collider based on sprite transparency analysis.",
             parameterSchema: {
                 path: z.string().describe("Path to the GameObject in scene or prefab asset path (e.g., 'Assets/Prefabs/MyPrefab.prefab')"),
                 componentType: z.string().describe("Type name of the component"),
                 index: z.number().optional().describe("Index of the component if multiple exist (default: 0)"),
-                properties: z.record(z.any()).describe("Object containing property names and their new values. For BoxCollider2D, use 'autoFit: true' to auto-size based on sprite transparency.")
+                properties: z.record(z.any()).describe("Object containing property names and their new values. For 2D colliders, use 'autoFit: true' to auto-size/shape based on sprite transparency.")
             },
             annotations: {
                 title: "Modify Component",

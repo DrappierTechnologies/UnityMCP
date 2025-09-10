@@ -76,16 +76,6 @@ namespace UnityMCP.Editor.Handlers
                     };
                 }
 
-                var gameObject = FindGameObjectByPath(path);
-                if (gameObject == null)
-                {
-                    return new JObject
-                    {
-                        ["success"] = false,
-                        ["error"] = $"GameObject not found at path: {path}"
-                    };
-                }
-
                 var type = GetComponentType(componentType);
                 if (type == null)
                 {
@@ -96,29 +86,32 @@ namespace UnityMCP.Editor.Handlers
                     };
                 }
 
-                // Check if component already exists (for non-duplicate components)
-                if (!AllowsMultiple(type) && gameObject.GetComponent(type) != null)
+                return ExecuteOnGameObject(path, gameObject =>
                 {
+                    // Check if component already exists (for non-duplicate components)
+                    if (!AllowsMultiple(type) && gameObject.GetComponent(type) != null)
+                    {
+                        return new JObject
+                        {
+                            ["success"] = false,
+                            ["error"] = $"Component {componentType} already exists on GameObject and doesn't allow duplicates"
+                        };
+                    }
+
+                    Undo.RecordObject(gameObject, $"Add {componentType}");
+                    var component = gameObject.AddComponent(type);
+
                     return new JObject
                     {
-                        ["success"] = false,
-                        ["error"] = $"Component {componentType} already exists on GameObject and doesn't allow duplicates"
+                        ["success"] = true,
+                        ["component"] = new JObject
+                        {
+                            ["type"] = component.GetType().Name,
+                            ["fullType"] = component.GetType().FullName,
+                            ["enabled"] = component is Behaviour behaviour ? behaviour.enabled : true
+                        }
                     };
-                }
-
-                Undo.RecordObject(gameObject, $"Add {componentType}");
-                var component = gameObject.AddComponent(type);
-
-                return new JObject
-                {
-                    ["success"] = true,
-                    ["component"] = new JObject
-                    {
-                        ["type"] = component.GetType().Name,
-                        ["fullType"] = component.GetType().FullName,
-                        ["enabled"] = component is Behaviour behaviour ? behaviour.enabled : true
-                    }
-                };
+                });
             }
             catch (Exception ex)
             {
@@ -1368,11 +1361,95 @@ namespace UnityMCP.Editor.Handlers
         /// </summary>
         private GameObject FindGameObjectByPath(string path)
         {
+            // Check if this is an asset path (starts with "Assets/")
+            if (!string.IsNullOrEmpty(path) && path.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase))
+            {
+                // Try to load as prefab asset
+                var prefabAsset = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                return prefabAsset;
+            }
+
+            // Scene object path - try active objects first
             var obj = GameObject.Find(path);
             if (obj != null) return obj;
 
-            // Try to find inactive object
+            // Try to find inactive object in scene
             return FindInactiveObjectByPath(path);
+        }
+
+        /// <summary>
+        /// Executes an action on a GameObject, handling both scene objects and prefab assets.
+        /// </summary>
+        private JObject ExecuteOnGameObject(string path, Func<GameObject, JObject> action)
+        {
+            // Check if this is an asset path (prefab)
+            if (!string.IsNullOrEmpty(path) && path.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase))
+            {
+                return ExecuteOnPrefabAsset(path, action);
+            }
+            else
+            {
+                // Scene object - find and execute directly
+                var gameObject = FindGameObjectByPath(path);
+                if (gameObject == null)
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = $"GameObject not found at path: {path}"
+                    };
+                }
+                
+                return action(gameObject);
+            }
+        }
+
+        /// <summary>
+        /// Executes an action on a prefab asset using the proper prefab workflow.
+        /// </summary>
+        private JObject ExecuteOnPrefabAsset(string assetPath, Func<GameObject, JObject> action)
+        {
+            try
+            {
+                // Load prefab contents for editing
+                var prefabRoot = PrefabUtility.LoadPrefabContents(assetPath);
+                if (prefabRoot == null)
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = $"Failed to load prefab asset at path: {assetPath}"
+                    };
+                }
+
+                try
+                {
+                    // Execute the action on the prefab root
+                    var result = action(prefabRoot);
+                    
+                    // If the action was successful, save the prefab
+                    if (result["success"]?.Value<bool>() == true)
+                    {
+                        PrefabUtility.SaveAsPrefabAsset(prefabRoot, assetPath);
+                        AssetDatabase.Refresh();
+                    }
+                    
+                    return result;
+                }
+                finally
+                {
+                    // Always unload prefab contents to clean up
+                    PrefabUtility.UnloadPrefabContents(prefabRoot);
+                }
+            }
+            catch (Exception ex)
+            {
+                return new JObject
+                {
+                    ["success"] = false,
+                    ["error"] = $"Error modifying prefab asset: {ex.Message}"
+                };
+            }
         }
 
         /// <summary>
@@ -1601,16 +1678,55 @@ namespace UnityMCP.Editor.Handlers
         {
             var type = component.GetType();
 
-            // Special handling for BoxCollider2D autoFit
-            if (component is BoxCollider2D boxCollider && propertyName == "autoFit" && value.Value<bool>() == true)
+            // Special handling for 2D collider autoFit
+            if (propertyName == "autoFit" && value.Value<bool>() == true)
             {
                 var spriteRenderer = component.GetComponent<SpriteRenderer>();
                 if (spriteRenderer?.sprite != null)
                 {
                     var bounds = CalculateSpriteBounds(spriteRenderer.sprite);
-                    boxCollider.size = bounds.size;
-                    boxCollider.offset = bounds.center;
-                    return true;
+                    
+                    if (component is BoxCollider2D boxCollider)
+                    {
+                        boxCollider.size = bounds.size;
+                        boxCollider.offset = bounds.center;
+                        return true;
+                    }
+                    else if (component is CircleCollider2D circleCollider)
+                    {
+                        // Use the larger dimension as radius for best fit
+                        float radius = Mathf.Max(bounds.size.x, bounds.size.y) * 0.5f;
+                        circleCollider.radius = radius;
+                        circleCollider.offset = bounds.center;
+                        return true;
+                    }
+                    else if (component is CapsuleCollider2D capsuleCollider)
+                    {
+                        capsuleCollider.size = bounds.size;
+                        capsuleCollider.offset = bounds.center;
+                        // Set direction based on which dimension is larger
+                        capsuleCollider.direction = bounds.size.x > bounds.size.y ? 
+                            CapsuleDirection2D.Horizontal : CapsuleDirection2D.Vertical;
+                        return true;
+                    }
+                    else if (component is PolygonCollider2D polygonCollider)
+                    {
+                        var points = GeneratePolygonPoints(spriteRenderer.sprite);
+                        if (points != null && points.Length > 0)
+                        {
+                            polygonCollider.points = points;
+                            return true;
+                        }
+                    }
+                    else if (component is EdgeCollider2D edgeCollider)
+                    {
+                        var points = GenerateEdgePoints(spriteRenderer.sprite);
+                        if (points != null && points.Length > 0)
+                        {
+                            edgeCollider.points = points;
+                            return true;
+                        }
+                    }
                 }
                 else
                 {
@@ -1853,6 +1969,241 @@ namespace UnityMCP.Editor.Handlers
             {
                 // If any error occurs, fall back to original sprite bounds
                 return sprite.bounds;
+            }
+            finally
+            {
+                // Restore original texture settings if we changed them
+                if (!wasReadable && originalTexture != null)
+                {
+                    string assetPath = AssetDatabase.GetAssetPath(originalTexture);
+                    var textureImporter = AssetImporter.GetAtPath(assetPath) as TextureImporter;
+                    
+                    if (textureImporter != null)
+                    {
+                        textureImporter.isReadable = false;
+                        textureImporter.SaveAndReimport();
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Generates polygon points for a PolygonCollider2D based on sprite transparency.
+        /// </summary>
+        private Vector2[] GeneratePolygonPoints(Sprite sprite)
+        {
+            if (sprite == null || sprite.texture == null)
+            {
+                return null;
+            }
+
+            // Make texture readable if needed
+            var originalTexture = sprite.texture;
+            bool wasReadable = originalTexture.isReadable;
+            
+            if (!wasReadable)
+            {
+                string assetPath = AssetDatabase.GetAssetPath(originalTexture);
+                var textureImporter = AssetImporter.GetAtPath(assetPath) as TextureImporter;
+                
+                if (textureImporter != null)
+                {
+                    textureImporter.isReadable = true;
+                    textureImporter.SaveAndReimport();
+                }
+                else
+                {
+                    return null;
+                }
+            }
+
+            try
+            {
+                // Get pixel data
+                Color[] pixels = sprite.texture.GetPixels(
+                    (int)sprite.rect.x, (int)sprite.rect.y,
+                    (int)sprite.rect.width, (int)sprite.rect.height
+                );
+
+                int width = (int)sprite.rect.width;
+                int height = (int)sprite.rect.height;
+                float pixelsPerUnit = sprite.pixelsPerUnit;
+
+                // Create a simplified polygon by sampling around the edges
+                var points = new List<Vector2>();
+                
+                // Sample points around the perimeter, checking for non-transparent pixels
+                int samples = Mathf.Min(32, Mathf.Max(8, width + height) / 4); // Adaptive sampling
+                
+                for (int i = 0; i < samples; i++)
+                {
+                    float angle = i * 2f * Mathf.PI / samples;
+                    
+                    // Cast a ray from center outward to find edge
+                    Vector2 center = new Vector2(width * 0.5f, height * 0.5f);
+                    Vector2 direction = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle));
+                    
+                    // Find the furthest non-transparent pixel in this direction
+                    float maxDistance = Mathf.Min(width, height) * 0.6f; // Reasonable search distance
+                    Vector2? edgePoint = null;
+                    
+                    for (float distance = 1f; distance <= maxDistance; distance += 1f)
+                    {
+                        Vector2 testPoint = center + direction * distance;
+                        int x = Mathf.RoundToInt(testPoint.x);
+                        int y = Mathf.RoundToInt(testPoint.y);
+                        
+                        if (x >= 0 && x < width && y >= 0 && y < height)
+                        {
+                            if (pixels[y * width + x].a > 0.01f)
+                            {
+                                edgePoint = testPoint;
+                            }
+                        }
+                        else
+                        {
+                            break; // Out of bounds
+                        }
+                    }
+                    
+                    if (edgePoint.HasValue)
+                    {
+                        // Convert to Unity units relative to sprite center
+                        Vector2 unityPoint = new Vector2(
+                            (edgePoint.Value.x - center.x) / pixelsPerUnit,
+                            (edgePoint.Value.y - center.y) / pixelsPerUnit
+                        );
+                        points.Add(unityPoint);
+                    }
+                }
+
+                return points.Count >= 3 ? points.ToArray() : null;
+            }
+            catch (System.Exception)
+            {
+                return null;
+            }
+            finally
+            {
+                // Restore original texture settings if we changed them
+                if (!wasReadable && originalTexture != null)
+                {
+                    string assetPath = AssetDatabase.GetAssetPath(originalTexture);
+                    var textureImporter = AssetImporter.GetAtPath(assetPath) as TextureImporter;
+                    
+                    if (textureImporter != null)
+                    {
+                        textureImporter.isReadable = false;
+                        textureImporter.SaveAndReimport();
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Generates edge points for an EdgeCollider2D based on sprite outline.
+        /// </summary>
+        private Vector2[] GenerateEdgePoints(Sprite sprite)
+        {
+            if (sprite == null || sprite.texture == null)
+            {
+                return null;
+            }
+
+            // Make texture readable if needed
+            var originalTexture = sprite.texture;
+            bool wasReadable = originalTexture.isReadable;
+            
+            if (!wasReadable)
+            {
+                string assetPath = AssetDatabase.GetAssetPath(originalTexture);
+                var textureImporter = AssetImporter.GetAtPath(assetPath) as TextureImporter;
+                
+                if (textureImporter != null)
+                {
+                    textureImporter.isReadable = true;
+                    textureImporter.SaveAndReimport();
+                }
+                else
+                {
+                    return null;
+                }
+            }
+
+            try
+            {
+                // Get pixel data
+                Color[] pixels = sprite.texture.GetPixels(
+                    (int)sprite.rect.x, (int)sprite.rect.y,
+                    (int)sprite.rect.width, (int)sprite.rect.height
+                );
+
+                int width = (int)sprite.rect.width;
+                int height = (int)sprite.rect.height;
+                float pixelsPerUnit = sprite.pixelsPerUnit;
+
+                // Find the outline by tracing the edge of non-transparent pixels
+                var edgePoints = new List<Vector2>();
+                
+                // Simple edge detection: find pixels that are non-transparent but adjacent to transparent pixels
+                for (int y = 1; y < height - 1; y++)
+                {
+                    for (int x = 1; x < width - 1; x++)
+                    {
+                        int index = y * width + x;
+                        
+                        // If this pixel is non-transparent
+                        if (pixels[index].a > 0.01f)
+                        {
+                            // Check if any adjacent pixel is transparent (edge detection)
+                            bool isEdge = false;
+                            
+                            // Check 4-connected neighbors
+                            if (pixels[(y - 1) * width + x].a <= 0.01f || // Above
+                                pixels[(y + 1) * width + x].a <= 0.01f || // Below
+                                pixels[y * width + (x - 1)].a <= 0.01f || // Left
+                                pixels[y * width + (x + 1)].a <= 0.01f)   // Right
+                            {
+                                isEdge = true;
+                            }
+                            
+                            if (isEdge)
+                            {
+                                // Convert to Unity units relative to sprite center
+                                Vector2 center = new Vector2(width * 0.5f, height * 0.5f);
+                                Vector2 unityPoint = new Vector2(
+                                    (x - center.x) / pixelsPerUnit,
+                                    (y - center.y) / pixelsPerUnit
+                                );
+                                edgePoints.Add(unityPoint);
+                            }
+                        }
+                    }
+                }
+
+                // Sort points to create a more coherent edge line (simple approach)
+                if (edgePoints.Count > 2)
+                {
+                    // Sort by angle from center to create a roughly circular path
+                    edgePoints.Sort((a, b) => 
+                        Mathf.Atan2(a.y, a.x).CompareTo(Mathf.Atan2(b.y, b.x))
+                    );
+                    
+                    // Reduce density for performance (keep every nth point)
+                    int step = Mathf.Max(1, edgePoints.Count / 24); // Max 24 points
+                    var reducedPoints = new List<Vector2>();
+                    for (int i = 0; i < edgePoints.Count; i += step)
+                    {
+                        reducedPoints.Add(edgePoints[i]);
+                    }
+                    edgePoints = reducedPoints;
+                }
+
+                return edgePoints.Count >= 2 ? edgePoints.ToArray() : null;
+            }
+            catch (System.Exception)
+            {
+                return null;
             }
             finally
             {
