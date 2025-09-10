@@ -1601,6 +1601,24 @@ namespace UnityMCP.Editor.Handlers
         {
             var type = component.GetType();
 
+            // Special handling for BoxCollider2D autoFit
+            if (component is BoxCollider2D boxCollider && propertyName == "autoFit" && value.Value<bool>() == true)
+            {
+                var spriteRenderer = component.GetComponent<SpriteRenderer>();
+                if (spriteRenderer?.sprite != null)
+                {
+                    var bounds = CalculateSpriteBounds(spriteRenderer.sprite);
+                    boxCollider.size = bounds.size;
+                    boxCollider.offset = bounds.center;
+                    return true;
+                }
+                else
+                {
+                    // No sprite found - could return error, but we'll just skip for now
+                    return false;
+                }
+            }
+
             // Try field first
             var field = type.GetField(propertyName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
             if (field != null)
@@ -1738,6 +1756,118 @@ namespace UnityMCP.Editor.Handlers
                     capsule.radius = 0.5f;
                     capsule.height = 2;
                     break;
+            }
+        }
+
+        /// <summary>
+        /// Calculates tight-fitting bounds for a sprite based on non-transparent pixels.
+        /// </summary>
+        private Bounds CalculateSpriteBounds(Sprite sprite)
+        {
+            if (sprite == null || sprite.texture == null)
+            {
+                return new Bounds(Vector3.zero, Vector3.one);
+            }
+
+            // If texture is not readable, try to make it temporarily readable
+            var originalTexture = sprite.texture;
+            bool wasReadable = originalTexture.isReadable;
+            
+            if (!wasReadable)
+            {
+                // Try to get the texture importer and make it readable temporarily
+                string assetPath = AssetDatabase.GetAssetPath(originalTexture);
+                var textureImporter = AssetImporter.GetAtPath(assetPath) as TextureImporter;
+                
+                if (textureImporter != null)
+                {
+                    textureImporter.isReadable = true;
+                    textureImporter.SaveAndReimport();
+                }
+                else
+                {
+                    // Can't make readable, fall back to sprite bounds
+                    return sprite.bounds;
+                }
+            }
+
+            try
+            {
+                // Get pixel data from the sprite's texture region
+                Color[] pixels = sprite.texture.GetPixels(
+                    (int)sprite.rect.x, (int)sprite.rect.y,
+                    (int)sprite.rect.width, (int)sprite.rect.height
+                );
+
+                int width = (int)sprite.rect.width;
+                int height = (int)sprite.rect.height;
+
+                // Find bounds of non-transparent pixels
+                int minX = width, maxX = -1;
+                int minY = height, maxY = -1;
+
+                for (int y = 0; y < height; y++)
+                {
+                    for (int x = 0; x < width; x++)
+                    {
+                        // Check if pixel has some opacity (not fully transparent)
+                        if (pixels[y * width + x].a > 0.01f)
+                        {
+                            if (x < minX) minX = x;
+                            if (x > maxX) maxX = x;
+                            if (y < minY) minY = y;
+                            if (y > maxY) maxY = y;
+                        }
+                    }
+                }
+
+                // If no non-transparent pixels found, use original bounds
+                if (maxX < minX || maxY < minY)
+                {
+                    return sprite.bounds;
+                }
+
+                // Convert pixel coordinates to Unity units
+                float pixelsPerUnit = sprite.pixelsPerUnit;
+                
+                Vector2 size = new Vector2(
+                    (maxX - minX + 1) / pixelsPerUnit,
+                    (maxY - minY + 1) / pixelsPerUnit
+                );
+
+                // Calculate center offset relative to sprite center
+                Vector2 spriteCenter = new Vector2(width * 0.5f, height * 0.5f);
+                Vector2 boundsCenter = new Vector2(
+                    (minX + maxX) * 0.5f,
+                    (minY + maxY) * 0.5f
+                );
+                
+                Vector2 centerOffset = new Vector2(
+                    (boundsCenter.x - spriteCenter.x) / pixelsPerUnit,
+                    (boundsCenter.y - spriteCenter.y) / pixelsPerUnit
+                );
+
+                return new Bounds(centerOffset, size);
+            }
+            catch (System.Exception)
+            {
+                // If any error occurs, fall back to original sprite bounds
+                return sprite.bounds;
+            }
+            finally
+            {
+                // Restore original texture settings if we changed them
+                if (!wasReadable && originalTexture != null)
+                {
+                    string assetPath = AssetDatabase.GetAssetPath(originalTexture);
+                    var textureImporter = AssetImporter.GetAtPath(assetPath) as TextureImporter;
+                    
+                    if (textureImporter != null)
+                    {
+                        textureImporter.isReadable = false;
+                        textureImporter.SaveAndReimport();
+                    }
+                }
             }
         }
 
