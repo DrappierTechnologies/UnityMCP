@@ -38,6 +38,7 @@ export abstract class BaseCommandHandler implements ICommandHandler {
      * @returns A Promise that resolves to a JSON object containing the execution result.
      */
     public async execute(action: string, parameters: JObject): Promise<JObject> {
+        console.error(`[DEBUG] BaseCommandHandler.execute called: ${this.commandPrefix}.${action}`);
         try {
             // First, ensure we have a valid connection to Unity
             await this.ensureUnityConnection();
@@ -103,6 +104,8 @@ export abstract class BaseCommandHandler implements ICommandHandler {
      */
     protected async sendUnityRequest(command: string, parameters: JObject): Promise<JObject> {
         await this.ensureUnityConnection();
+        
+        console.error(`[DEBUG] BaseCommandHandler.sendUnityRequest called with command: ${command}`);
 
         // Explicit non-null assertion since we've checked in ensureUnityConnection
         return this.unityConnection!.sendRequest({

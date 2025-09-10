@@ -63,9 +63,9 @@ export class InspectorCommandHandler extends BaseCommandHandler {
 
         // inspector.modifyComponent - Modify component properties
         tools.set("inspector_modifyComponent", {
-            description: "Modify properties of a component on a GameObject",
+            description: "Modify properties of a component on a GameObject or prefab asset",
             parameterSchema: {
-                path: z.string().describe("Path to the GameObject"),
+                path: z.string().describe("Path to the GameObject in scene or prefab asset path (e.g., 'Assets/Prefabs/MyPrefab.prefab')"),
                 componentType: z.string().describe("Type name of the component"),
                 index: z.number().optional().describe("Index of the component if multiple exist (default: 0)"),
                 properties: z.record(z.any()).describe("Object containing property names and their new values")
@@ -236,6 +236,40 @@ export class InspectorCommandHandler extends BaseCommandHandler {
             }
         });
 
+        // inspector.createPrefab - Create prefab asset from GameObject
+        tools.set("inspector_createPrefab", {
+            description: "Create a prefab asset from a GameObject in the scene",
+            parameterSchema: {
+                path: z.string().describe("Path to the GameObject in the scene"),
+                prefabPath: z.string().describe("Asset path where the prefab should be created (e.g., 'Assets/Prefabs/MyPrefab.prefab')"),
+                replacePrefab: z.boolean().optional().describe("Replace existing prefab if it exists (default: true)")
+            },
+            annotations: {
+                title: "Create Prefab",
+                readOnlyHint: false,
+                destructiveHint: false,
+                idempotentHint: false,
+                openWorldHint: false
+            }
+        });
+
+        // inspector.instantiatePrefab - Create GameObject instance from prefab
+        tools.set("inspector_instantiatePrefab", {
+            description: "Create a GameObject instance from a prefab asset",
+            parameterSchema: {
+                prefabPath: z.string().describe("Path to the prefab asset to instantiate"),
+                instanceName: z.string().optional().describe("Name for the instance (default: prefab name)"),
+                parentPath: z.string().optional().describe("Path to parent GameObject (optional)")
+            },
+            annotations: {
+                title: "Instantiate Prefab",
+                readOnlyHint: false,
+                destructiveHint: false,
+                idempotentHint: false,
+                openWorldHint: false
+            }
+        });
+
         return tools;
     }
 
@@ -253,7 +287,7 @@ export class InspectorCommandHandler extends BaseCommandHandler {
                 "addcomponent", "removecomponent", "modifycomponent", "enablecomponent",
                 "copycomponent", "pastecomponent", "resetcomponent",
                 "getcomponents", "getcomponentproperties", "findreferences",
-                "applytoprefab", "revertfromprefab", "isprefab"
+                "applytoprefab", "revertfromprefab", "isprefab", "createprefab", "instantiateprefab"
             ];
 
             if (!validActions.includes(action.toLowerCase())) {

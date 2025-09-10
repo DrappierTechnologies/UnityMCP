@@ -51,6 +51,8 @@ namespace UnityMCP.Editor.Handlers
                 "applytoprefab" => ApplyToPrefab(parameters),
                 "revertfromprefab" => RevertFromPrefab(parameters),
                 "isprefab" => IsPrefab(parameters),
+                "createprefab" => CreatePrefab(parameters),
+                "instantiateprefab" => InstantiatePrefab(parameters),
                 _ => new JObject { ["success"] = false, ["error"] = $"Unknown action: {action}" }
             };
         }
@@ -217,7 +219,7 @@ namespace UnityMCP.Editor.Handlers
         }
 
         /// <summary>
-        /// Modifies properties of a component.
+        /// Modifies properties of a component on a GameObject or prefab asset.
         /// </summary>
         private JObject ModifyComponent(JObject parameters)
         {
@@ -237,6 +239,13 @@ namespace UnityMCP.Editor.Handlers
                     };
                 }
 
+                // Check if path is a prefab asset
+                if (path.EndsWith(".prefab"))
+                {
+                    return ModifyPrefabAssetComponent(path, componentType, index, properties);
+                }
+
+                // Handle scene GameObject (existing behavior)
                 var gameObject = FindGameObjectByPath(path);
                 if (gameObject == null)
                 {
@@ -284,6 +293,86 @@ namespace UnityMCP.Editor.Handlers
                     ["success"] = true,
                     ["modifiedProperties"] = modifiedProperties
                 };
+            }
+            catch (Exception ex)
+            {
+                return new JObject
+                {
+                    ["success"] = false,
+                    ["error"] = ex.Message
+                };
+            }
+        }
+
+        /// <summary>
+        /// Modifies properties of a component on a prefab asset using PrefabUtility workflow.
+        /// </summary>
+        private JObject ModifyPrefabAssetComponent(string prefabPath, string componentType, int index, JObject properties)
+        {
+            try
+            {
+                // Validate prefab asset exists
+                if (!AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath))
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = $"Prefab asset not found at path: {prefabPath}"
+                    };
+                }
+
+                var type = GetComponentType(componentType);
+                if (type == null)
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = $"Component type not found: {componentType}"
+                    };
+                }
+
+                // Load prefab contents for direct modification
+                var contentsRoot = PrefabUtility.LoadPrefabContents(prefabPath);
+                
+                try
+                {
+                    var components = contentsRoot.GetComponents(type);
+                    if (index >= components.Length)
+                    {
+                        return new JObject
+                        {
+                            ["success"] = false,
+                            ["error"] = $"Component index {index} out of range (found {components.Length} components)"
+                        };
+                    }
+
+                    var component = components[index];
+                    var modifiedProperties = new JArray();
+                    
+                    foreach (var prop in properties)
+                    {
+                        if (SetComponentProperty(component, prop.Key, prop.Value))
+                        {
+                            modifiedProperties.Add(prop.Key);
+                        }
+                    }
+
+                    // Save contents back to prefab asset
+                    PrefabUtility.SaveAsPrefabAsset(contentsRoot, prefabPath);
+
+                    return new JObject
+                    {
+                        ["success"] = true,
+                        ["modifiedProperties"] = modifiedProperties,
+                        ["prefabPath"] = prefabPath,
+                        ["componentType"] = componentType
+                    };
+                }
+                finally
+                {
+                    // Always unload prefab contents to free memory
+                    PrefabUtility.UnloadPrefabContents(contentsRoot);
+                }
             }
             catch (Exception ex)
             {
@@ -1080,6 +1169,198 @@ namespace UnityMCP.Editor.Handlers
             }
         }
 
+        /// <summary>
+        /// Creates a prefab asset from a GameObject.
+        /// </summary>
+        private JObject CreatePrefab(JObject parameters)
+        {
+            try
+            {
+                var path = parameters["path"]?.ToString();
+                var prefabPath = parameters["prefabPath"]?.ToString();
+                var replacePrefab = parameters["replacePrefab"]?.Value<bool>() ?? true;
+
+                if (string.IsNullOrEmpty(path))
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = "Path parameter is required"
+                    };
+                }
+
+                if (string.IsNullOrEmpty(prefabPath))
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = "PrefabPath parameter is required"
+                    };
+                }
+
+                // Ensure prefab path has .prefab extension
+                if (!prefabPath.EndsWith(".prefab"))
+                {
+                    prefabPath += ".prefab";
+                }
+
+                var gameObject = FindGameObjectByPath(path);
+                if (gameObject == null)
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = $"GameObject not found at path: {path}"
+                    };
+                }
+
+                // Check if prefab already exists and replacePrefab is false
+                if (!replacePrefab && AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath) != null)
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = $"Prefab already exists at {prefabPath} and replacePrefab is false"
+                    };
+                }
+
+                // Create directory if it doesn't exist
+                var directory = System.IO.Path.GetDirectoryName(prefabPath);
+                if (!AssetDatabase.IsValidFolder(directory))
+                {
+                    var folders = directory.Split('/');
+                    var currentPath = folders[0]; // Should be "Assets"
+                    
+                    for (int i = 1; i < folders.Length; i++)
+                    {
+                        var newPath = currentPath + "/" + folders[i];
+                        if (!AssetDatabase.IsValidFolder(newPath))
+                        {
+                            AssetDatabase.CreateFolder(currentPath, folders[i]);
+                        }
+                        currentPath = newPath;
+                    }
+                }
+
+                // Save as prefab asset
+                bool success;
+                var savedPrefab = PrefabUtility.SaveAsPrefabAsset(gameObject, prefabPath, out success);
+
+                if (!success || savedPrefab == null)
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = "Failed to create prefab asset"
+                    };
+                }
+
+                // Refresh asset database to ensure the prefab appears in the Project window
+                AssetDatabase.Refresh();
+
+                return new JObject
+                {
+                    ["success"] = true,
+                    ["prefabPath"] = prefabPath,
+                    ["prefabName"] = savedPrefab.name,
+                    ["replaced"] = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath) != null
+                };
+            }
+            catch (Exception ex)
+            {
+                return new JObject
+                {
+                    ["success"] = false,
+                    ["error"] = ex.Message
+                };
+            }
+        }
+
+        /// <summary>
+        /// Instantiates a prefab asset into the scene as a GameObject.
+        /// </summary>
+        private JObject InstantiatePrefab(JObject parameters)
+        {
+            try
+            {
+                var prefabPath = parameters["prefabPath"]?.ToString();
+                var instanceName = parameters["instanceName"]?.ToString();
+                var parentPath = parameters["parentPath"]?.ToString();
+
+                if (string.IsNullOrEmpty(prefabPath))
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = "PrefabPath parameter is required"
+                    };
+                }
+
+                // Load the prefab asset
+                var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+                if (prefab == null)
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = $"Prefab not found at path: {prefabPath}"
+                    };
+                }
+
+                // Instantiate the prefab (maintains all references and component values)
+                var instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+                if (instance == null)
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = "Failed to instantiate prefab"
+                    };
+                }
+
+                // Set custom name if provided
+                if (!string.IsNullOrEmpty(instanceName))
+                {
+                    instance.name = instanceName;
+                }
+
+                // Set parent if specified
+                if (!string.IsNullOrEmpty(parentPath))
+                {
+                    var parentObject = FindGameObjectByPath(parentPath);
+                    if (parentObject != null)
+                    {
+                        instance.transform.SetParent(parentObject.transform);
+                    }
+                    else
+                    {
+                        return new JObject
+                        {
+                            ["success"] = false,
+                            ["error"] = $"Parent GameObject not found at path: {parentPath}"
+                        };
+                    }
+                }
+
+                return new JObject
+                {
+                    ["success"] = true,
+                    ["instanceName"] = instance.name,
+                    ["instancePath"] = GetGameObjectPath(instance),
+                    ["prefabPath"] = prefabPath,
+                    ["instanceId"] = instance.GetInstanceID()
+                };
+            }
+            catch (Exception ex)
+            {
+                return new JObject
+                {
+                    ["success"] = false,
+                    ["error"] = ex.Message
+                };
+            }
+        }
+
         // Helper methods
 
         /// <summary>
@@ -1404,6 +1685,20 @@ namespace UnityMCP.Editor.Handlers
                         obj["b"]?.Value<float>() ?? 0,
                         obj["a"]?.Value<float>() ?? 1
                     );
+                }
+            }
+
+            // Handle Sprite asset loading
+            if (targetType == typeof(Sprite) && value.Type == JTokenType.String)
+            {
+                string spritePath = value.ToString();
+                if (!string.IsNullOrEmpty(spritePath))
+                {
+                    var sprite = AssetDatabase.LoadAssetAtPath<Sprite>(spritePath);
+                    if (sprite != null)
+                    {
+                        return sprite;
+                    }
                 }
             }
 
