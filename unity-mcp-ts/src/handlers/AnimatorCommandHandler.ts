@@ -32,10 +32,10 @@ export class AnimatorCommandHandler extends BaseCommandHandler {
         
         // animator.createController - Create a new animator controller
         tools.set("animator_createController", {
-            description: "Create a new animator controller asset",
+            description: "Create animator controllers to manage character animations and state transitions. Controllers define how animations blend and switch based on parameters and conditions.",
             parameterSchema: {
-                path: z.string().describe("Asset path for the controller (e.g., 'Assets/Animations/')"),
-                name: z.string().optional().describe("Name of the controller (default: 'NewAnimatorController')"),
+                path: z.string().describe("Folder path where controller will be created (e.g., 'Assets/Animations/Characters/', 'Assets/Controllers/')"),
+                name: z.string().optional().describe("Controller filename without extension (e.g., 'PlayerController', 'EnemyAnimator'). Default: 'NewAnimatorController'"),
                 defaultParameters: z.array(z.object({
                     name: z.string().describe("Parameter name"),
                     type: z.enum(["float", "int", "bool", "trigger"]).describe("Parameter type")
@@ -52,7 +52,7 @@ export class AnimatorCommandHandler extends BaseCommandHandler {
 
         // animator.addState - Add a state to controller
         tools.set("animator_addState", {
-            description: "Add a state to an animator controller layer",
+            description: "Add animation states to controller layers. States represent individual animations (idle, walk, jump) that characters can be in. Essential for building animation state machines.",
             parameterSchema: {
                 controllerPath: z.string().describe("Path to the animator controller asset"),
                 stateName: z.string().describe("Name of the state to add"),

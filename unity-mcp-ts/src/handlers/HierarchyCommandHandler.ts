@@ -30,7 +30,7 @@ export class HierarchyCommandHandler extends BaseCommandHandler {
 
         // hierarchy.get - Read hierarchy structure
         tools.set("hierarchy_get", {
-            description: "Get the Unity scene hierarchy structure",
+            description: "Get Unity scene hierarchy showing all GameObjects and their parent-child relationships. Use this to understand scene structure before adding, modifying, or organizing objects.",
             parameterSchema: {
                 rootPath: z.string().optional().describe("Root GameObject path to start from (optional)"),
                 depth: z.number().optional().describe("Maximum depth to traverse (-1 for unlimited)"),
@@ -39,13 +39,15 @@ export class HierarchyCommandHandler extends BaseCommandHandler {
             annotations: {
                 title: "Get Hierarchy",
                 readOnlyHint: true,
+                destructiveHint: false,
+                idempotentHint: true,
                 openWorldHint: false
             }
         });
 
         // hierarchy.create - Create new GameObjects
         tools.set("hierarchy_create", {
-            description: "Create a new GameObject in the Unity scene",
+            description: "Create new GameObjects in Unity scene with optional components. Use this to add new entities like characters, props, or organizational containers to your scene.",
             parameterSchema: {
                 name: z.string().describe("Name for the new GameObject"),
                 parentPath: z.string().optional().describe("Path to parent GameObject (optional)"),
@@ -119,6 +121,8 @@ export class HierarchyCommandHandler extends BaseCommandHandler {
             annotations: {
                 title: "Get Children",
                 readOnlyHint: true,
+                destructiveHint: false,
+                idempotentHint: true,
                 openWorldHint: false
             }
         });
@@ -134,6 +138,8 @@ export class HierarchyCommandHandler extends BaseCommandHandler {
             annotations: {
                 title: "Find GameObjects",
                 readOnlyHint: true,
+                destructiveHint: false,
+                idempotentHint: true,
                 openWorldHint: false
             }
         });

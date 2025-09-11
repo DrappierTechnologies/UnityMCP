@@ -62,6 +62,8 @@ export abstract class ConsoleCommandHandler extends BaseCommandHandler {
             annotations: {
                 title: "Get Console Logs",
                 readOnlyHint: true,
+                destructiveHint: false,
+                idempotentHint: true,
                 openWorldHint: false
             }
         });
