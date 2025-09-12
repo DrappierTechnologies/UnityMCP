@@ -134,3 +134,4 @@ Test handlers directly in Unity Editor:
 - DO NOT MODIFY THE BASE IMPLEMENTATION only extend
 - DO NOT ATTEMPT TO REWRITE OR REFACTOR SIGNIFICANT PORTIONS OF CODE WITHOUT AUTHORIZATION
 - Roll back changes you make if you've broken something that you cannot quickly fix
+- Remove GameObjects that were instantiated or created in the scene for your testing purposes
