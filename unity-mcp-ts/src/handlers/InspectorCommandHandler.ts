@@ -30,10 +30,10 @@ export class InspectorCommandHandler extends BaseCommandHandler {
 
         // inspector.addComponent - Add a component to a GameObject
         tools.set("inspector_addComponent", {
-            description: "Add a component to a GameObject",
+            description: "Add components to GameObjects to give them functionality like rendering, physics, or custom behaviors. Components define what GameObjects can do.",
             parameterSchema: {
-                path: z.string().describe("Path to the GameObject"),
-                componentType: z.string().describe("Type name of the component to add (e.g., 'Rigidbody', 'BoxCollider', 'MyCustomComponent')")
+                path: z.string().describe("GameObject path in scene (e.g., 'Player/Body') or prefab path (e.g., 'Assets/Prefabs/Character.prefab')"),
+                componentType: z.string().describe("Component class name like 'Rigidbody2D' (physics), 'SpriteRenderer' (2D graphics), 'Animator' (animations), 'BoxCollider2D' (collision)")
             },
             annotations: {
                 title: "Add Component",
@@ -63,12 +63,12 @@ export class InspectorCommandHandler extends BaseCommandHandler {
 
         // inspector.modifyComponent - Modify component properties
         tools.set("inspector_modifyComponent", {
-            description: "Modify properties of a component on a GameObject",
+            description: "Modify component properties to change GameObject behavior, appearance, or physics. Use this to configure components after adding them, such as setting Transform positions, Rigidbody mass, or Material colors.",
             parameterSchema: {
-                path: z.string().describe("Path to the GameObject"),
+                path: z.string().describe("Path to the GameObject in scene or prefab asset path (e.g., 'Assets/Prefabs/MyPrefab.prefab')"),
                 componentType: z.string().describe("Type name of the component"),
                 index: z.number().optional().describe("Index of the component if multiple exist (default: 0)"),
-                properties: z.record(z.any()).describe("Object containing property names and their new values")
+                properties: z.record(z.any()).describe("Object containing property names and their new values. For 2D colliders, use 'autoFit: true' to auto-size/shape based on sprite transparency.")
             },
             annotations: {
                 title: "Modify Component",
@@ -108,6 +108,8 @@ export class InspectorCommandHandler extends BaseCommandHandler {
             annotations: {
                 title: "Copy Component",
                 readOnlyHint: true,
+                destructiveHint: false,
+                idempotentHint: true,
                 openWorldHint: false
             }
         });
@@ -156,6 +158,8 @@ export class InspectorCommandHandler extends BaseCommandHandler {
             annotations: {
                 title: "Get Components",
                 readOnlyHint: true,
+                destructiveHint: false,
+                idempotentHint: true,
                 openWorldHint: false
             }
         });
@@ -171,6 +175,8 @@ export class InspectorCommandHandler extends BaseCommandHandler {
             annotations: {
                 title: "Get Component Properties",
                 readOnlyHint: true,
+                destructiveHint: false,
+                idempotentHint: true,
                 openWorldHint: false
             }
         });
@@ -187,6 +193,8 @@ export class InspectorCommandHandler extends BaseCommandHandler {
             annotations: {
                 title: "Find Component References",
                 readOnlyHint: true,
+                destructiveHint: false,
+                idempotentHint: true,
                 openWorldHint: false
             }
         });
@@ -232,6 +240,42 @@ export class InspectorCommandHandler extends BaseCommandHandler {
             annotations: {
                 title: "Check Prefab Status",
                 readOnlyHint: true,
+                destructiveHint: false,
+                idempotentHint: true,
+                openWorldHint: false
+            }
+        });
+
+        // inspector.createPrefab - Create prefab asset from GameObject
+        tools.set("inspector_createPrefab", {
+            description: "Create a prefab asset from a GameObject in the scene",
+            parameterSchema: {
+                path: z.string().describe("Path to the GameObject in the scene"),
+                prefabPath: z.string().describe("Asset path where the prefab should be created (e.g., 'Assets/Prefabs/MyPrefab.prefab')"),
+                replacePrefab: z.boolean().optional().describe("Replace existing prefab if it exists (default: true)")
+            },
+            annotations: {
+                title: "Create Prefab",
+                readOnlyHint: false,
+                destructiveHint: false,
+                idempotentHint: false,
+                openWorldHint: false
+            }
+        });
+
+        // inspector.instantiatePrefab - Create GameObject instance from prefab
+        tools.set("inspector_instantiatePrefab", {
+            description: "Create a GameObject instance from a prefab asset",
+            parameterSchema: {
+                prefabPath: z.string().describe("Path to the prefab asset to instantiate"),
+                instanceName: z.string().optional().describe("Name for the instance (default: prefab name)"),
+                parentPath: z.string().optional().describe("Path to parent GameObject (optional)")
+            },
+            annotations: {
+                title: "Instantiate Prefab",
+                readOnlyHint: false,
+                destructiveHint: false,
+                idempotentHint: false,
                 openWorldHint: false
             }
         });
@@ -253,7 +297,7 @@ export class InspectorCommandHandler extends BaseCommandHandler {
                 "addcomponent", "removecomponent", "modifycomponent", "enablecomponent",
                 "copycomponent", "pastecomponent", "resetcomponent",
                 "getcomponents", "getcomponentproperties", "findreferences",
-                "applytoprefab", "revertfromprefab", "isprefab"
+                "applytoprefab", "revertfromprefab", "isprefab", "createprefab", "instantiateprefab"
             ];
 
             if (!validActions.includes(action.toLowerCase())) {

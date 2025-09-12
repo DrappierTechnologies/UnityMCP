@@ -51,6 +51,8 @@ namespace UnityMCP.Editor.Handlers
                 "applytoprefab" => ApplyToPrefab(parameters),
                 "revertfromprefab" => RevertFromPrefab(parameters),
                 "isprefab" => IsPrefab(parameters),
+                "createprefab" => CreatePrefab(parameters),
+                "instantiateprefab" => InstantiatePrefab(parameters),
                 _ => new JObject { ["success"] = false, ["error"] = $"Unknown action: {action}" }
             };
         }
@@ -74,16 +76,6 @@ namespace UnityMCP.Editor.Handlers
                     };
                 }
 
-                var gameObject = FindGameObjectByPath(path);
-                if (gameObject == null)
-                {
-                    return new JObject
-                    {
-                        ["success"] = false,
-                        ["error"] = $"GameObject not found at path: {path}"
-                    };
-                }
-
                 var type = GetComponentType(componentType);
                 if (type == null)
                 {
@@ -94,29 +86,32 @@ namespace UnityMCP.Editor.Handlers
                     };
                 }
 
-                // Check if component already exists (for non-duplicate components)
-                if (!AllowsMultiple(type) && gameObject.GetComponent(type) != null)
+                return ExecuteOnGameObject(path, gameObject =>
                 {
+                    // Check if component already exists (for non-duplicate components)
+                    if (!AllowsMultiple(type) && gameObject.GetComponent(type) != null)
+                    {
+                        return new JObject
+                        {
+                            ["success"] = false,
+                            ["error"] = $"Component {componentType} already exists on GameObject and doesn't allow duplicates"
+                        };
+                    }
+
+                    Undo.RecordObject(gameObject, $"Add {componentType}");
+                    var component = gameObject.AddComponent(type);
+
                     return new JObject
                     {
-                        ["success"] = false,
-                        ["error"] = $"Component {componentType} already exists on GameObject and doesn't allow duplicates"
+                        ["success"] = true,
+                        ["component"] = new JObject
+                        {
+                            ["type"] = component.GetType().Name,
+                            ["fullType"] = component.GetType().FullName,
+                            ["enabled"] = component is Behaviour behaviour ? behaviour.enabled : true
+                        }
                     };
-                }
-
-                Undo.RecordObject(gameObject, $"Add {componentType}");
-                var component = gameObject.AddComponent(type);
-
-                return new JObject
-                {
-                    ["success"] = true,
-                    ["component"] = new JObject
-                    {
-                        ["type"] = component.GetType().Name,
-                        ["fullType"] = component.GetType().FullName,
-                        ["enabled"] = component is Behaviour behaviour ? behaviour.enabled : true
-                    }
-                };
+                });
             }
             catch (Exception ex)
             {
@@ -217,7 +212,7 @@ namespace UnityMCP.Editor.Handlers
         }
 
         /// <summary>
-        /// Modifies properties of a component.
+        /// Modifies properties of a component on a GameObject or prefab asset.
         /// </summary>
         private JObject ModifyComponent(JObject parameters)
         {
@@ -237,6 +232,13 @@ namespace UnityMCP.Editor.Handlers
                     };
                 }
 
+                // Check if path is a prefab asset
+                if (path.EndsWith(".prefab"))
+                {
+                    return ModifyPrefabAssetComponent(path, componentType, index, properties);
+                }
+
+                // Handle scene GameObject (existing behavior)
                 var gameObject = FindGameObjectByPath(path);
                 if (gameObject == null)
                 {
@@ -284,6 +286,86 @@ namespace UnityMCP.Editor.Handlers
                     ["success"] = true,
                     ["modifiedProperties"] = modifiedProperties
                 };
+            }
+            catch (Exception ex)
+            {
+                return new JObject
+                {
+                    ["success"] = false,
+                    ["error"] = ex.Message
+                };
+            }
+        }
+
+        /// <summary>
+        /// Modifies properties of a component on a prefab asset using PrefabUtility workflow.
+        /// </summary>
+        private JObject ModifyPrefabAssetComponent(string prefabPath, string componentType, int index, JObject properties)
+        {
+            try
+            {
+                // Validate prefab asset exists
+                if (!AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath))
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = $"Prefab asset not found at path: {prefabPath}"
+                    };
+                }
+
+                var type = GetComponentType(componentType);
+                if (type == null)
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = $"Component type not found: {componentType}"
+                    };
+                }
+
+                // Load prefab contents for direct modification
+                var contentsRoot = PrefabUtility.LoadPrefabContents(prefabPath);
+                
+                try
+                {
+                    var components = contentsRoot.GetComponents(type);
+                    if (index >= components.Length)
+                    {
+                        return new JObject
+                        {
+                            ["success"] = false,
+                            ["error"] = $"Component index {index} out of range (found {components.Length} components)"
+                        };
+                    }
+
+                    var component = components[index];
+                    var modifiedProperties = new JArray();
+                    
+                    foreach (var prop in properties)
+                    {
+                        if (SetComponentProperty(component, prop.Key, prop.Value))
+                        {
+                            modifiedProperties.Add(prop.Key);
+                        }
+                    }
+
+                    // Save contents back to prefab asset
+                    PrefabUtility.SaveAsPrefabAsset(contentsRoot, prefabPath);
+
+                    return new JObject
+                    {
+                        ["success"] = true,
+                        ["modifiedProperties"] = modifiedProperties,
+                        ["prefabPath"] = prefabPath,
+                        ["componentType"] = componentType
+                    };
+                }
+                finally
+                {
+                    // Always unload prefab contents to free memory
+                    PrefabUtility.UnloadPrefabContents(contentsRoot);
+                }
             }
             catch (Exception ex)
             {
@@ -1080,6 +1162,198 @@ namespace UnityMCP.Editor.Handlers
             }
         }
 
+        /// <summary>
+        /// Creates a prefab asset from a GameObject.
+        /// </summary>
+        private JObject CreatePrefab(JObject parameters)
+        {
+            try
+            {
+                var path = parameters["path"]?.ToString();
+                var prefabPath = parameters["prefabPath"]?.ToString();
+                var replacePrefab = parameters["replacePrefab"]?.Value<bool>() ?? true;
+
+                if (string.IsNullOrEmpty(path))
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = "Path parameter is required"
+                    };
+                }
+
+                if (string.IsNullOrEmpty(prefabPath))
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = "PrefabPath parameter is required"
+                    };
+                }
+
+                // Ensure prefab path has .prefab extension
+                if (!prefabPath.EndsWith(".prefab"))
+                {
+                    prefabPath += ".prefab";
+                }
+
+                var gameObject = FindGameObjectByPath(path);
+                if (gameObject == null)
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = $"GameObject not found at path: {path}"
+                    };
+                }
+
+                // Check if prefab already exists and replacePrefab is false
+                if (!replacePrefab && AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath) != null)
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = $"Prefab already exists at {prefabPath} and replacePrefab is false"
+                    };
+                }
+
+                // Create directory if it doesn't exist
+                var directory = System.IO.Path.GetDirectoryName(prefabPath);
+                if (!AssetDatabase.IsValidFolder(directory))
+                {
+                    var folders = directory.Split('/');
+                    var currentPath = folders[0]; // Should be "Assets"
+                    
+                    for (int i = 1; i < folders.Length; i++)
+                    {
+                        var newPath = currentPath + "/" + folders[i];
+                        if (!AssetDatabase.IsValidFolder(newPath))
+                        {
+                            AssetDatabase.CreateFolder(currentPath, folders[i]);
+                        }
+                        currentPath = newPath;
+                    }
+                }
+
+                // Save as prefab asset
+                bool success;
+                var savedPrefab = PrefabUtility.SaveAsPrefabAsset(gameObject, prefabPath, out success);
+
+                if (!success || savedPrefab == null)
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = "Failed to create prefab asset"
+                    };
+                }
+
+                // Refresh asset database to ensure the prefab appears in the Project window
+                AssetDatabase.Refresh();
+
+                return new JObject
+                {
+                    ["success"] = true,
+                    ["prefabPath"] = prefabPath,
+                    ["prefabName"] = savedPrefab.name,
+                    ["replaced"] = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath) != null
+                };
+            }
+            catch (Exception ex)
+            {
+                return new JObject
+                {
+                    ["success"] = false,
+                    ["error"] = ex.Message
+                };
+            }
+        }
+
+        /// <summary>
+        /// Instantiates a prefab asset into the scene as a GameObject.
+        /// </summary>
+        private JObject InstantiatePrefab(JObject parameters)
+        {
+            try
+            {
+                var prefabPath = parameters["prefabPath"]?.ToString();
+                var instanceName = parameters["instanceName"]?.ToString();
+                var parentPath = parameters["parentPath"]?.ToString();
+
+                if (string.IsNullOrEmpty(prefabPath))
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = "PrefabPath parameter is required"
+                    };
+                }
+
+                // Load the prefab asset
+                var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+                if (prefab == null)
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = $"Prefab not found at path: {prefabPath}"
+                    };
+                }
+
+                // Instantiate the prefab (maintains all references and component values)
+                var instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+                if (instance == null)
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = "Failed to instantiate prefab"
+                    };
+                }
+
+                // Set custom name if provided
+                if (!string.IsNullOrEmpty(instanceName))
+                {
+                    instance.name = instanceName;
+                }
+
+                // Set parent if specified
+                if (!string.IsNullOrEmpty(parentPath))
+                {
+                    var parentObject = FindGameObjectByPath(parentPath);
+                    if (parentObject != null)
+                    {
+                        instance.transform.SetParent(parentObject.transform);
+                    }
+                    else
+                    {
+                        return new JObject
+                        {
+                            ["success"] = false,
+                            ["error"] = $"Parent GameObject not found at path: {parentPath}"
+                        };
+                    }
+                }
+
+                return new JObject
+                {
+                    ["success"] = true,
+                    ["instanceName"] = instance.name,
+                    ["instancePath"] = GetGameObjectPath(instance),
+                    ["prefabPath"] = prefabPath,
+                    ["instanceId"] = instance.GetInstanceID()
+                };
+            }
+            catch (Exception ex)
+            {
+                return new JObject
+                {
+                    ["success"] = false,
+                    ["error"] = ex.Message
+                };
+            }
+        }
+
         // Helper methods
 
         /// <summary>
@@ -1087,11 +1361,95 @@ namespace UnityMCP.Editor.Handlers
         /// </summary>
         private GameObject FindGameObjectByPath(string path)
         {
+            // Check if this is an asset path (starts with "Assets/")
+            if (!string.IsNullOrEmpty(path) && path.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase))
+            {
+                // Try to load as prefab asset
+                var prefabAsset = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                return prefabAsset;
+            }
+
+            // Scene object path - try active objects first
             var obj = GameObject.Find(path);
             if (obj != null) return obj;
 
-            // Try to find inactive object
+            // Try to find inactive object in scene
             return FindInactiveObjectByPath(path);
+        }
+
+        /// <summary>
+        /// Executes an action on a GameObject, handling both scene objects and prefab assets.
+        /// </summary>
+        private JObject ExecuteOnGameObject(string path, Func<GameObject, JObject> action)
+        {
+            // Check if this is an asset path (prefab)
+            if (!string.IsNullOrEmpty(path) && path.StartsWith("Assets/", StringComparison.OrdinalIgnoreCase))
+            {
+                return ExecuteOnPrefabAsset(path, action);
+            }
+            else
+            {
+                // Scene object - find and execute directly
+                var gameObject = FindGameObjectByPath(path);
+                if (gameObject == null)
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = $"GameObject not found at path: {path}"
+                    };
+                }
+                
+                return action(gameObject);
+            }
+        }
+
+        /// <summary>
+        /// Executes an action on a prefab asset using the proper prefab workflow.
+        /// </summary>
+        private JObject ExecuteOnPrefabAsset(string assetPath, Func<GameObject, JObject> action)
+        {
+            try
+            {
+                // Load prefab contents for editing
+                var prefabRoot = PrefabUtility.LoadPrefabContents(assetPath);
+                if (prefabRoot == null)
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = $"Failed to load prefab asset at path: {assetPath}"
+                    };
+                }
+
+                try
+                {
+                    // Execute the action on the prefab root
+                    var result = action(prefabRoot);
+                    
+                    // If the action was successful, save the prefab
+                    if (result["success"]?.Value<bool>() == true)
+                    {
+                        PrefabUtility.SaveAsPrefabAsset(prefabRoot, assetPath);
+                        AssetDatabase.Refresh();
+                    }
+                    
+                    return result;
+                }
+                finally
+                {
+                    // Always unload prefab contents to clean up
+                    PrefabUtility.UnloadPrefabContents(prefabRoot);
+                }
+            }
+            catch (Exception ex)
+            {
+                return new JObject
+                {
+                    ["success"] = false,
+                    ["error"] = $"Error modifying prefab asset: {ex.Message}"
+                };
+            }
         }
 
         /// <summary>
@@ -1320,6 +1678,45 @@ namespace UnityMCP.Editor.Handlers
         {
             var type = component.GetType();
 
+            // Special handling for 2D collider autoFit
+            if (propertyName == "autoFit" && value.Value<bool>() == true)
+            {
+                var spriteRenderer = component.GetComponent<SpriteRenderer>();
+                if (spriteRenderer?.sprite != null)
+                {
+                    var bounds = CalculateSpriteBounds(spriteRenderer.sprite);
+                    
+                    if (component is BoxCollider2D boxCollider)
+                    {
+                        boxCollider.size = bounds.size;
+                        boxCollider.offset = bounds.center;
+                        return true;
+                    }
+                    else if (component is CircleCollider2D circleCollider)
+                    {
+                        // Use the larger dimension as radius for best fit
+                        float radius = Mathf.Max(bounds.size.x, bounds.size.y) * 0.5f;
+                        circleCollider.radius = radius;
+                        circleCollider.offset = bounds.center;
+                        return true;
+                    }
+                    else if (component is CapsuleCollider2D capsuleCollider)
+                    {
+                        capsuleCollider.size = bounds.size;
+                        capsuleCollider.offset = bounds.center;
+                        // Set direction based on which dimension is larger
+                        capsuleCollider.direction = bounds.size.x > bounds.size.y ? 
+                            CapsuleDirection2D.Horizontal : CapsuleDirection2D.Vertical;
+                        return true;
+                    }
+                }
+                else
+                {
+                    // No sprite found - could return error, but we'll just skip for now
+                    return false;
+                }
+            }
+
             // Try field first
             var field = type.GetField(propertyName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
             if (field != null)
@@ -1407,6 +1804,20 @@ namespace UnityMCP.Editor.Handlers
                 }
             }
 
+            // Handle Sprite asset loading
+            if (targetType == typeof(Sprite) && value.Type == JTokenType.String)
+            {
+                string spritePath = value.ToString();
+                if (!string.IsNullOrEmpty(spritePath))
+                {
+                    var sprite = AssetDatabase.LoadAssetAtPath<Sprite>(spritePath);
+                    if (sprite != null)
+                    {
+                        return sprite;
+                    }
+                }
+            }
+
             // Default conversion
             return value.ToObject(targetType);
         }
@@ -1445,6 +1856,119 @@ namespace UnityMCP.Editor.Handlers
                     break;
             }
         }
+
+        /// <summary>
+        /// Calculates tight-fitting bounds for a sprite based on non-transparent pixels.
+        /// </summary>
+        private Bounds CalculateSpriteBounds(Sprite sprite)
+        {
+            if (sprite == null || sprite.texture == null)
+            {
+                return new Bounds(Vector3.zero, Vector3.one);
+            }
+
+            // If texture is not readable, try to make it temporarily readable
+            var originalTexture = sprite.texture;
+            bool wasReadable = originalTexture.isReadable;
+            
+            if (!wasReadable)
+            {
+                // Try to get the texture importer and make it readable temporarily
+                string assetPath = AssetDatabase.GetAssetPath(originalTexture);
+                var textureImporter = AssetImporter.GetAtPath(assetPath) as TextureImporter;
+                
+                if (textureImporter != null)
+                {
+                    textureImporter.isReadable = true;
+                    textureImporter.SaveAndReimport();
+                }
+                else
+                {
+                    // Can't make readable, fall back to sprite bounds
+                    return sprite.bounds;
+                }
+            }
+
+            try
+            {
+                // Get pixel data from the sprite's texture region
+                Color[] pixels = sprite.texture.GetPixels(
+                    (int)sprite.rect.x, (int)sprite.rect.y,
+                    (int)sprite.rect.width, (int)sprite.rect.height
+                );
+
+                int width = (int)sprite.rect.width;
+                int height = (int)sprite.rect.height;
+
+                // Find bounds of non-transparent pixels
+                int minX = width, maxX = -1;
+                int minY = height, maxY = -1;
+
+                for (int y = 0; y < height; y++)
+                {
+                    for (int x = 0; x < width; x++)
+                    {
+                        // Check if pixel has some opacity (not fully transparent)
+                        if (pixels[y * width + x].a > 0.01f)
+                        {
+                            if (x < minX) minX = x;
+                            if (x > maxX) maxX = x;
+                            if (y < minY) minY = y;
+                            if (y > maxY) maxY = y;
+                        }
+                    }
+                }
+
+                // If no non-transparent pixels found, use original bounds
+                if (maxX < minX || maxY < minY)
+                {
+                    return sprite.bounds;
+                }
+
+                // Convert pixel coordinates to Unity units
+                float pixelsPerUnit = sprite.pixelsPerUnit;
+                
+                Vector2 size = new Vector2(
+                    (maxX - minX + 1) / pixelsPerUnit,
+                    (maxY - minY + 1) / pixelsPerUnit
+                );
+
+                // Calculate center offset relative to sprite center
+                Vector2 spriteCenter = new Vector2(width * 0.5f, height * 0.5f);
+                Vector2 boundsCenter = new Vector2(
+                    (minX + maxX) * 0.5f,
+                    (minY + maxY) * 0.5f
+                );
+                
+                Vector2 centerOffset = new Vector2(
+                    (boundsCenter.x - spriteCenter.x) / pixelsPerUnit,
+                    (boundsCenter.y - spriteCenter.y) / pixelsPerUnit
+                );
+
+                return new Bounds(centerOffset, size);
+            }
+            catch (System.Exception)
+            {
+                // If any error occurs, fall back to original sprite bounds
+                return sprite.bounds;
+            }
+            finally
+            {
+                // Restore original texture settings if we changed them
+                if (!wasReadable && originalTexture != null)
+                {
+                    string assetPath = AssetDatabase.GetAssetPath(originalTexture);
+                    var textureImporter = AssetImporter.GetAtPath(assetPath) as TextureImporter;
+                    
+                    if (textureImporter != null)
+                    {
+                        textureImporter.isReadable = false;
+                        textureImporter.SaveAndReimport();
+                    }
+                }
+            }
+        }
+
 
         /// <summary>
         /// Checks if a GameObject is editor-only.

@@ -84,6 +84,31 @@ The framework uses a handler-based architecture with automatic discovery:
 - Adhere to Clean Code and Clean Architecture software design
 - Adhere to this projects architecture as much as possible
 
+## Token Efficiency Guidelines
+
+### Prefer Modification Over Recreation
+- **ALWAYS** prefer modifying existing assets over creating new ones
+- When copying prefabs/assets, modify only the specific parts that need to change
+- Don't rebuild entire GameObjects - leverage existing component configurations
+- Example: Instead of creating empty GameObject + adding 7 components, duplicate existing prefab and change 2 references
+
+### Efficient Asset Workflows
+- Duplicate → Rename → Modify specific parts (not rebuild from scratch)
+- Preserve existing component settings, physics values, script parameters
+- Only change what's actually different (sprites, controllers, specific properties)
+
+### Tool Call Optimization  
+- Batch related operations when possible
+- Use project duplication instead of manual component-by-component recreation
+- Leverage existing working configurations rather than starting from zero
+- Think: "What's the minimal change needed?" not "How do I rebuild this?"
+
+### Before Acting, Ask:
+1. Can I modify existing asset instead of creating new?
+2. What's the minimum number of changes needed?
+3. Am I preserving working configurations?
+4. Is there a more direct path to the goal?
+
 ## Testing
 
 ### TypeScript Tests
@@ -109,3 +134,4 @@ Test handlers directly in Unity Editor:
 - DO NOT MODIFY THE BASE IMPLEMENTATION only extend
 - DO NOT ATTEMPT TO REWRITE OR REFACTOR SIGNIFICANT PORTIONS OF CODE WITHOUT AUTHORIZATION
 - Roll back changes you make if you've broken something that you cannot quickly fix
+- Remove GameObjects that were instantiated or created in the scene for your testing purposes

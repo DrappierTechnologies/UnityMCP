@@ -36,8 +36,6 @@ namespace UnityMCP.Editor.Handlers
             {
                 // Read operations
                 "search" => SearchAssets(parameters),
-                "findbyname" => FindAssetsByName(parameters),
-                "findbytype" => FindAssetsByType(parameters),
                 "getinfo" => GetAssetInfo(parameters),
                 "getdependencies" => GetAssetDependencies(parameters),
                 "browse" => BrowseProjectStructure(parameters),
@@ -81,9 +79,13 @@ namespace UnityMCP.Editor.Handlers
                     };
                 }
 
+                var searchType = parameters["searchType"]?.ToString() ?? "all";
+                var assetType = parameters["assetType"]?.ToString();
+                var folder = parameters["folder"]?.ToString();
+                var exact = parameters["exact"]?.Value<bool>() ?? false;
                 var limit = parameters["limit"]?.Value<int>() ?? 100;
                 var includePackages = parameters["includePackages"]?.Value<bool>() ?? false;
-                
+
                 // Check if query looks like a folder pattern first
                 if (IsLikelyFolderPattern(query))
                 {
@@ -93,66 +95,63 @@ namespace UnityMCP.Editor.Handlers
                         return folderResults;
                     }
                 }
+
+                // Build search filter based on search type
+                string searchFilter = "";
                 
-                // Fall back to standard asset search
-                var searchFilter = includePackages ? query : $"{query} -packages";
-                var results = AssetDatabase.FindAssets(searchFilter);
-
-                return FormatSearchResults(results, limit, includePackages);
-            }
-            catch (Exception ex)
-            {
-                return new JObject
+                switch (searchType.ToLower())
                 {
-                    ["success"] = false,
-                    ["error"] = ex.Message
-                };
-            }
-        }
-
-        /// <summary>
-        /// Finds assets by name.
-        /// </summary>
-        private JObject FindAssetsByName(JObject parameters)
-        {
-            try
-            {
-                var name = parameters["name"]?.ToString();
-                if (string.IsNullOrWhiteSpace(name))
-                {
-                    return new JObject
-                    {
-                        ["success"] = false,
-                        ["error"] = "Name parameter is required"
-                    };
+                    case "name":
+                        searchFilter = query;
+                        break;
+                    case "type":
+                        searchFilter = $"t:{query}";
+                        break;
+                    case "content":
+                        // For content search, we'll search broadly and filter later
+                        searchFilter = query;
+                        break;
+                    case "all":
+                    default:
+                        searchFilter = query;
+                        break;
                 }
 
-                var limit = parameters["limit"]?.Value<int>() ?? 100;
-                var exact = parameters["exact"]?.Value<bool>() ?? false;
-                var includePackages = parameters["includePackages"]?.Value<bool>() ?? false;
-
-                // Check if name looks like a folder pattern first
-                if (IsLikelyFolderPattern(name))
+                // Add asset type filter if specified
+                if (!string.IsNullOrEmpty(assetType))
                 {
-                    var folderResults = SearchAssetsInFolderPattern(name, limit, includePackages);
-                    if (folderResults["success"].Value<bool>())
+                    searchFilter = $"{searchFilter} t:{assetType}";
+                }
+
+                // Add folder filter if specified
+                if (!string.IsNullOrEmpty(folder))
+                {
+                    // Ensure folder path is properly formatted
+                    folder = folder.Replace("\\", "/");
+                    if (!folder.StartsWith("Assets/") && folder != "Assets")
                     {
-                        return folderResults;
+                        folder = "Assets/" + folder.TrimStart('/');
                     }
                 }
-                
-                var searchQuery = includePackages ? name : $"{name} -packages";
-                var results = AssetDatabase.FindAssets(searchQuery);
 
-                // Filter for exact matches if requested
-                if (exact)
+                // Add package filter
+                if (!includePackages)
+                {
+                    searchFilter = $"{searchFilter} -packages";
+                }
+
+                var results = AssetDatabase.FindAssets(searchFilter.Trim(), 
+                    !string.IsNullOrEmpty(folder) ? new[] { folder } : null);
+
+                // Post-process results for exact name matching if requested
+                if (searchType.ToLower() == "name" && exact)
                 {
                     var exactResults = new List<string>();
                     foreach (var guid in results)
                     {
                         var assetPath = AssetDatabase.GUIDToAssetPath(guid);
                         var assetName = Path.GetFileNameWithoutExtension(assetPath);
-                        if (string.Equals(assetName, name, StringComparison.OrdinalIgnoreCase))
+                        if (string.Equals(assetName, query, StringComparison.OrdinalIgnoreCase))
                         {
                             exactResults.Add(guid);
                         }
@@ -172,40 +171,6 @@ namespace UnityMCP.Editor.Handlers
             }
         }
 
-        /// <summary>
-        /// Finds assets by type.
-        /// </summary>
-        private JObject FindAssetsByType(JObject parameters)
-        {
-            try
-            {
-                var typeName = parameters["type"]?.ToString();
-                if (string.IsNullOrWhiteSpace(typeName))
-                {
-                    return new JObject
-                    {
-                        ["success"] = false,
-                        ["error"] = "Type parameter is required"
-                    };
-                }
-
-                var limit = parameters["limit"]?.Value<int>() ?? 100;
-                var includePackages = parameters["includePackages"]?.Value<bool>() ?? false;
-
-                var searchQuery = includePackages ? $"t:{typeName}" : $"t:{typeName} -packages";
-                var results = AssetDatabase.FindAssets(searchQuery);
-
-                return FormatSearchResults(results, limit, includePackages);
-            }
-            catch (Exception ex)
-            {
-                return new JObject
-                {
-                    ["success"] = false,
-                    ["error"] = ex.Message
-                };
-            }
-        }
 
         /// <summary>
         /// Gets detailed information about an asset.

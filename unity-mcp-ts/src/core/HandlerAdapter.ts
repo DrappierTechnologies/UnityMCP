@@ -173,7 +173,11 @@ export class HandlerAdapter {
                 async (params) => {
                     try {
                         // Extract the action from the tool name (e.g., "menu_execute" -> "execute")
-                        const action = toolName.split('_')[1] || 'execute';
+                        // For handlers with prefix, remove the prefix (e.g., "animator_getControllerInfo" -> "getControllerInfo")
+                        const parts = toolName.split('_');
+                        const action = parts.length > 1 ? parts.slice(1).join('_') : 'execute';
+
+                        console.error(`[DEBUG] HandlerAdapter calling handler.execute: toolName=${toolName}, action=${action}, handlerPrefix=${handler.commandPrefix}`);
 
                         // Execute the command and await the result
                         const result = await handler.execute(action, params);

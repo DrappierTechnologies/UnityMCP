@@ -31,9 +31,13 @@ export class ProjectCommandHandler extends BaseCommandHandler {
         // READ OPERATIONS
         
         tools.set("project_search", {
-            description: "Search for assets in the Unity project using a query string",
+            description: "Search and find assets in Unity project by name, type, or content. Use this to locate existing sprites, scripts, prefabs, materials, and other assets before creating new ones or to understand project structure.",
             parameterSchema: {
-                query: z.string().describe("The search query string"),
+                query: z.string().describe("Search term like 'Player', 'texture', or file extension '.cs'. Use descriptive names to find assets."),
+                searchType: z.enum(["name", "type", "content", "all"]).optional().describe("Search scope: 'name' for filenames, 'type' for Unity asset types, 'content' for file contents, 'all' for comprehensive search (default: 'all')"),
+                assetType: z.string().optional().describe("Unity asset type filter like 'Texture2D' (images), 'Material' (shaders), 'MonoScript' (C# scripts), 'GameObject' (prefabs)"),
+                folder: z.string().optional().describe("Folder path to limit search scope (e.g., 'Assets/Characters', 'Assets/Textures/UI')"),
+                exact: z.boolean().optional().describe("Whether to perform exact match for name searches (default: false)"),
                 limit: z.number().optional().describe("Maximum number of results to return (default: 100)"),
                 includePackages: z.boolean().optional().describe("Include package assets in search (default: false)")
             },
@@ -46,38 +50,6 @@ export class ProjectCommandHandler extends BaseCommandHandler {
             }
         });
 
-        tools.set("project_findByName", {
-            description: "Find assets by name in the Unity project",
-            parameterSchema: {
-                name: z.string().describe("The asset name to search for"),
-                exact: z.boolean().optional().describe("Whether to perform an exact match (default: false)"),
-                limit: z.number().optional().describe("Maximum number of results to return (default: 100)"),
-                includePackages: z.boolean().optional().describe("Include package assets in search (default: false)")
-            },
-            annotations: {
-                title: "Find Assets by Name",
-                readOnlyHint: true,
-                destructiveHint: false,
-                idempotentHint: true,
-                openWorldHint: false
-            }
-        });
-
-        tools.set("project_findByType", {
-            description: "Find assets by type in the Unity project",
-            parameterSchema: {
-                type: z.string().describe("The asset type name to search for (e.g., 'Texture2D', 'Material', 'MonoScript')"),
-                limit: z.number().optional().describe("Maximum number of results to return (default: 100)"),
-                includePackages: z.boolean().optional().describe("Include package assets in search (default: false)")
-            },
-            annotations: {
-                title: "Find Assets by Type",
-                readOnlyHint: true,
-                destructiveHint: false,
-                idempotentHint: true,
-                openWorldHint: false
-            }
-        });
 
         tools.set("project_getInfo", {
             description: "Get detailed information about a specific asset",
@@ -144,7 +116,7 @@ export class ProjectCommandHandler extends BaseCommandHandler {
         });
 
         tools.set("project_createAsset", {
-            description: "Create a new asset in the Unity project",
+            description: "Create new assets like scripts, materials, or animator controllers in Unity project. Use this to generate new content rather than duplicating existing assets.",
             parameterSchema: {
                 assetType: z.enum(["script", "csharp", "material", "animatorcontroller", "scriptableobject"]).describe("Type of asset to create"),
                 assetName: z.string().describe("Name of the new asset"),
@@ -162,7 +134,7 @@ export class ProjectCommandHandler extends BaseCommandHandler {
         });
 
         tools.set("project_duplicate", {
-            description: "Duplicate an existing asset",
+            description: "Duplicate an existing asset to create variants. More efficient than creating from scratch when you need similar assets with small modifications.",
             parameterSchema: {
                 sourcePath: z.string().describe("Path to the asset to duplicate"),
                 newName: z.string().optional().describe("Name for the duplicate (optional)")
@@ -295,7 +267,7 @@ export class ProjectCommandHandler extends BaseCommandHandler {
             // Validate action
             const validActions = [
                 // Read operations
-                "search", "findbyname", "findbytype", "getinfo", "getdependencies", "browse",
+                "search", "getinfo", "getdependencies", "browse",
                 // Create operations  
                 "createfolder", "createasset", "duplicate", "importasset",
                 // Update operations
