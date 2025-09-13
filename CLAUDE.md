@@ -84,6 +84,63 @@ The framework uses a handler-based architecture with automatic discovery:
 - Adhere to Clean Code and Clean Architecture software design
 - Adhere to this projects architecture as much as possible
 
+## Issue Escalation and Analysis Protocol
+
+### When Issues Arise During Task Execution
+
+**STOP IMMEDIATELY** when encountering:
+- Unexpected errors or exceptions
+- Tool failures or connection issues  
+- Build/compilation problems
+- Test failures
+- Integration conflicts
+- Performance degradation
+- "cb is not a function" or similar callback errors
+- Port conflicts or server connection issues
+
+### Required Response Pattern
+
+1. **HALT EXECUTION** - Do not attempt workarounds or continue with broken functionality
+2. **ENTER PLAN MODE** - Switch to analysis mode immediately
+3. **ROOT CAUSE ANALYSIS** - Investigate the underlying issue systematically:
+   - Read error logs and stack traces
+   - Check configuration files and dependencies
+   - Verify system state and prerequisites
+   - Identify scope of impact (single tool vs system-wide)
+   - Check for port conflicts, process conflicts, or resource locks
+4. **DOCUMENT FINDINGS** - Clearly explain what went wrong and why
+5. **PLAN RESOLUTION** - Present a structured fix plan using ExitPlanMode tool
+6. **WAIT FOR APPROVAL** - Do not proceed until user confirms the approach
+
+### Forbidden Behaviors During Issues
+
+- ❌ Creating temporary scripts or workarounds
+- ❌ "Let me try a different approach" without analysis
+- ❌ Continuing with partial functionality
+- ❌ Making assumptions about what the user wants
+- ❌ Band-aid solutions that mask root problems
+- ❌ Ignoring connection errors and proceeding anyway
+
+### Required Analysis Questions
+
+Before proposing any fix, answer:
+- What is the root cause of this issue?
+- What systems/components are affected?
+- Is this a configuration, code, or environment problem?
+- What are the potential side effects of fixing this?
+- Are there upstream dependencies that need addressing?
+- Could this affect other parts of the system?
+
+### Communication Protocol
+
+Use phrases like:
+- "I've encountered an issue that requires analysis before proceeding"
+- "Let me investigate the root cause and present a plan"
+- "This error indicates a deeper problem that needs systematic resolution"
+- "I need to stop and analyze this issue properly before continuing"
+
+This ensures thorough problem-solving rather than hasty workarounds.
+
 ## Token Efficiency Guidelines
 
 ### Prefer Modification Over Recreation
