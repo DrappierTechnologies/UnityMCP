@@ -181,6 +181,12 @@ Test handlers directly in Unity Editor:
 3. Click "Connect" to start server
 4. Test handlers via Claude Desktop or MCP Inspector
 
+## Unity Editor File Synchronization
+
+**CRITICAL**: Whenever you modify ANY files in the `jp.shiranui-isuzu.unity-mcp/Editor/` folder, you MUST prompt the user to copy those files into their Unity project. The repository files are separate from the Unity project's package files, so changes won't take effect until manually copied.
+
+**Always ask the user**: "Please copy the modified Editor files to your Unity project so the changes take effect."
+
 ## Important Notes
 
 - Unity server runs on main thread - handlers must be thread-safe

@@ -275,7 +275,7 @@ namespace UnityMCP.Editor.Handlers
                 var modifiedProperties = new JArray();
                 foreach (var prop in properties)
                 {
-                    if (SetComponentProperty(component, prop.Key, prop.Value))
+                    if (SetComponentPropertyReflection(component, prop.Key, prop.Value))
                     {
                         modifiedProperties.Add(prop.Key);
                     }
@@ -341,10 +341,10 @@ namespace UnityMCP.Editor.Handlers
 
                     var component = components[index];
                     var modifiedProperties = new JArray();
-                    
+
                     foreach (var prop in properties)
                     {
-                        if (SetComponentProperty(component, prop.Key, prop.Value))
+                        if (SetComponentPropertyReflection(component, prop.Key, prop.Value))
                         {
                             modifiedProperties.Add(prop.Key);
                         }
@@ -1579,19 +1579,29 @@ namespace UnityMCP.Editor.Handlers
                     {
                         continue;
                     }
-                    
+
                     // For MeshFilter: skip 'mesh' - use 'sharedMesh' instead
                     if (component is MeshFilter && prop.Name == "mesh")
                     {
                         continue;
                     }
-                    
+
                     // For MeshCollider: skip 'material' property which also causes instantiation
                     if (component is Collider && prop.Name == "material")
                     {
                         continue;
                     }
-                    
+
+                    // For Animator: skip properties that cause warnings or require specific contexts
+                    if (component is Animator && (prop.Name == "bodyPosition" ||
+                                                  prop.Name == "bodyRotation" ||
+                                                  prop.Name == "playbackTime" ||
+                                                  prop.Name == "recorderStartTime" ||
+                                                  prop.Name == "recorderStopTime"))
+                    {
+                        continue;
+                    }
+
                     var value = prop.GetValue(component);
                     result[prop.Name] = SerializeValue(value);
                 }
@@ -1667,16 +1677,151 @@ namespace UnityMCP.Editor.Handlers
 
             foreach (var prop in data)
             {
-                SetComponentProperty(component, prop.Key, prop.Value);
+                SetComponentPropertyReflection(component, prop.Key, prop.Value);
             }
         }
 
         /// <summary>
-        /// Sets a property value on a component.
+        /// Sets a property value on a component using SerializedProperty API.
         /// </summary>
-        private bool SetComponentProperty(Component component, string propertyName, JToken value)
+        private bool SetComponentPropertySerialized(Component component, string propertyName, JToken value)
+        {
+            var serializedObject = new SerializedObject(component);
+
+            // Special handling for Animator controller property
+            string serializedPropertyName = propertyName;
+            if (component is Animator && propertyName == "runtimeAnimatorController")
+            {
+                serializedPropertyName = "m_Controller";
+            }
+
+            var property = serializedObject.FindProperty(serializedPropertyName);
+
+            if (property == null)
+            {
+                return false;
+            }
+
+            try
+            {
+                // Handle different property types using SerializedProperty API
+                switch (property.propertyType)
+                {
+                    case SerializedPropertyType.Integer:
+                        property.intValue = value.Value<int>();
+                        break;
+
+                    case SerializedPropertyType.Boolean:
+                        property.boolValue = value.Value<bool>();
+                        break;
+
+                    case SerializedPropertyType.Float:
+                        property.floatValue = value.Value<float>();
+                        break;
+
+                    case SerializedPropertyType.String:
+                        property.stringValue = value.Value<string>();
+                        break;
+
+                    case SerializedPropertyType.Color:
+                        var colorArray = value.ToObject<float[]>();
+                        if (colorArray != null && colorArray.Length >= 3)
+                        {
+                            property.colorValue = new Color(
+                                colorArray[0],
+                                colorArray[1],
+                                colorArray[2],
+                                colorArray.Length > 3 ? colorArray[3] : 1.0f
+                            );
+                        }
+                        break;
+
+                    case SerializedPropertyType.ObjectReference:
+                        // Handle object references (like AnimatorController)
+                        var assetPath = value.Value<string>();
+                        if (!string.IsNullOrEmpty(assetPath))
+                        {
+                            var referencedObject = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(assetPath);
+                            property.objectReferenceValue = referencedObject;
+                        }
+                        else
+                        {
+                            property.objectReferenceValue = null;
+                        }
+                        break;
+
+                    case SerializedPropertyType.Enum:
+                        property.enumValueIndex = value.Value<int>();
+                        break;
+
+                    case SerializedPropertyType.Vector2:
+                        var vec2Array = value.ToObject<float[]>();
+                        if (vec2Array != null && vec2Array.Length >= 2)
+                        {
+                            property.vector2Value = new Vector2(vec2Array[0], vec2Array[1]);
+                        }
+                        break;
+
+                    case SerializedPropertyType.Vector3:
+                        var vec3Array = value.ToObject<float[]>();
+                        if (vec3Array != null && vec3Array.Length >= 3)
+                        {
+                            property.vector3Value = new Vector3(vec3Array[0], vec3Array[1], vec3Array[2]);
+                        }
+                        break;
+
+                    case SerializedPropertyType.Vector4:
+                        var vec4Array = value.ToObject<float[]>();
+                        if (vec4Array != null && vec4Array.Length >= 4)
+                        {
+                            property.vector4Value = new Vector4(vec4Array[0], vec4Array[1], vec4Array[2], vec4Array[3]);
+                        }
+                        break;
+
+                    default:
+                        // For unsupported types, fall back to reflection-based approach
+                        return SetComponentPropertyReflection(component, propertyName, value);
+                }
+
+                // Apply the changes and mark as dirty
+                serializedObject.ApplyModifiedProperties();
+                EditorUtility.SetDirty(component);
+                return true;
+            }
+            catch (Exception)
+            {
+                // If SerializedProperty approach fails, fall back to reflection
+                return SetComponentPropertyReflection(component, propertyName, value);
+            }
+        }
+
+        /// <summary>
+        /// Sets a property value on a component using reflection (legacy approach).
+        /// </summary>
+        private bool SetComponentPropertyReflection(Component component, string propertyName, JToken value)
         {
             var type = component.GetType();
+
+            // Special handling for Animator controller assignment
+            if (component is Animator animator && propertyName == "runtimeAnimatorController")
+            {
+                var assetPath = value.Value<string>();
+                if (!string.IsNullOrEmpty(assetPath))
+                {
+                    var controller = AssetDatabase.LoadAssetAtPath<RuntimeAnimatorController>(assetPath);
+                    if (controller != null)
+                    {
+                        animator.runtimeAnimatorController = controller;
+                        return true;
+                    }
+                }
+                else
+                {
+                    animator.runtimeAnimatorController = null;
+                    return true;
+                }
+                return false;
+            }
 
             // Special handling for 2D collider autoFit
             if (propertyName == "autoFit" && value.Value<bool>() == true)
