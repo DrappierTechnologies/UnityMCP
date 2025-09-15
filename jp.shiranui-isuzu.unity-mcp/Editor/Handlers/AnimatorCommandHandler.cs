@@ -42,7 +42,15 @@ namespace UnityMCP.Editor.Handlers
                 "addlayer" => AddLayer(parameters),
                 "setblendtree" => SetBlendTree(parameters),
                 "getcontrollerinfo" => GetControllerInfo(parameters),
-                
+
+                // State modification operations
+                "modifystate" => ModifyState(parameters),
+                "getstateproperties" => GetStateProperties(parameters),
+                "configurestateparameters" => ConfigureStateParameters(parameters),
+                "configurestatebehaviors" => ConfigureStateBehaviors(parameters),
+                "batchmodifystates" => BatchModifyStates(parameters),
+                "validatestateconfiguration" => ValidateStateConfiguration(parameters),
+
                 // Animation clip operations
                 "createclip" => CreateClip(parameters),
                 "addcurve" => AddCurve(parameters),
@@ -51,7 +59,7 @@ namespace UnityMCP.Editor.Handlers
                 "getspriteanimation" => GetSpriteAnimationCurve(parameters),
                 "getclipinfo" => GetClipInfo(parameters),
                 "duplicateclip" => DuplicateClip(parameters),
-                
+
                 // Runtime animator control
                 "play" => Play(parameters),
                 "setparametervalue" => SetParameterValue(parameters),
@@ -59,13 +67,13 @@ namespace UnityMCP.Editor.Handlers
                 "getstate" => GetState(parameters),
                 "setspeed" => SetSpeed(parameters),
                 "getparameters" => GetParameters(parameters),
-                
+
                 // Component management
                 "attachanimator" => AttachAnimator(parameters),
                 "assigncontroller" => AssignController(parameters),
                 "configureavatar" => ConfigureAvatar(parameters),
                 "applyrootmotion" => ApplyRootMotion(parameters),
-                
+
                 _ => new JObject { ["success"] = false, ["error"] = $"Unknown action: {action}" }
             };
         }
@@ -756,6 +764,867 @@ namespace UnityMCP.Editor.Handlers
                     ["parameters"] = parametersArray,
                     ["layerCount"] = controller.layers.Length,
                     ["parameterCount"] = controller.parameters.Length
+                };
+            }
+            catch (Exception ex)
+            {
+                return new JObject
+                {
+                    ["success"] = false,
+                    ["error"] = ex.Message
+                };
+            }
+        }
+
+        #endregion
+
+        #region State Modification Operations
+
+        /// <summary>
+        /// Modifies properties of an existing animator state.
+        /// </summary>
+        private JObject ModifyState(JObject parameters)
+        {
+            try
+            {
+                var controllerPath = parameters["controllerPath"]?.ToString();
+                var stateName = parameters["stateName"]?.ToString();
+                var layerIndex = parameters["layerIndex"]?.Value<int>() ?? 0;
+
+                if (string.IsNullOrEmpty(controllerPath) || string.IsNullOrEmpty(stateName))
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = "ControllerPath and stateName parameters are required"
+                    };
+                }
+
+                var controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(controllerPath);
+                if (controller == null)
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = $"Animator controller not found at path: {controllerPath}"
+                    };
+                }
+
+                if (layerIndex >= controller.layers.Length)
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = $"Layer index {layerIndex} out of range"
+                    };
+                }
+
+                var stateMachine = controller.layers[layerIndex].stateMachine;
+                var state = FindState(stateMachine, stateName);
+
+                if (state == null)
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = $"State '{stateName}' not found in layer {layerIndex}"
+                    };
+                }
+
+                var modifiedProperties = new JArray();
+
+                // Modify speed property
+                if (parameters["speed"] != null)
+                {
+                    state.speed = parameters["speed"].Value<float>();
+                    modifiedProperties.Add("speed");
+                }
+
+                // Modify mirror property
+                if (parameters["mirror"] != null)
+                {
+                    state.mirror = parameters["mirror"].Value<bool>();
+                    modifiedProperties.Add("mirror");
+                }
+
+                // Modify cycle offset property
+                if (parameters["cycleOffset"] != null)
+                {
+                    state.cycleOffset = parameters["cycleOffset"].Value<float>();
+                    modifiedProperties.Add("cycleOffset");
+                }
+
+                // Modify writeDefaultValues property
+                if (parameters["writeDefaultValues"] != null)
+                {
+                    state.writeDefaultValues = parameters["writeDefaultValues"].Value<bool>();
+                    modifiedProperties.Add("writeDefaultValues");
+                }
+
+                // Modify tag property
+                if (parameters["tag"] != null)
+                {
+                    state.tag = parameters["tag"].ToString();
+                    modifiedProperties.Add("tag");
+                }
+
+                // Modify iKOnFeet property
+                if (parameters["iKOnFeet"] != null)
+                {
+                    state.iKOnFeet = parameters["iKOnFeet"].Value<bool>();
+                    modifiedProperties.Add("iKOnFeet");
+                }
+
+                // Configure speed parameter binding
+                if (parameters["speedParameter"] != null)
+                {
+                    var speedParam = parameters["speedParameter"].ToString();
+                    var speedParamActive = parameters["speedParameterActive"]?.Value<bool>() ?? true;
+
+                    state.speedParameter = speedParam;
+                    state.speedParameterActive = speedParamActive;
+                    modifiedProperties.Add("speedParameter");
+                }
+
+                // Configure mirror parameter binding
+                if (parameters["mirrorParameter"] != null)
+                {
+                    var mirrorParam = parameters["mirrorParameter"].ToString();
+                    var mirrorParamActive = parameters["mirrorParameterActive"]?.Value<bool>() ?? true;
+
+                    state.mirrorParameter = mirrorParam;
+                    state.mirrorParameterActive = mirrorParamActive;
+                    modifiedProperties.Add("mirrorParameter");
+                }
+
+                // Configure cycle offset parameter binding
+                if (parameters["cycleOffsetParameter"] != null)
+                {
+                    var cycleOffsetParam = parameters["cycleOffsetParameter"].ToString();
+                    var cycleOffsetParamActive = parameters["cycleOffsetParameterActive"]?.Value<bool>() ?? true;
+
+                    state.cycleOffsetParameter = cycleOffsetParam;
+                    state.cycleOffsetParameterActive = cycleOffsetParamActive;
+                    modifiedProperties.Add("cycleOffsetParameter");
+                }
+
+                // Configure time parameter binding
+                if (parameters["timeParameter"] != null)
+                {
+                    var timeParam = parameters["timeParameter"].ToString();
+                    var timeParamActive = parameters["timeParameterActive"]?.Value<bool>() ?? true;
+
+                    state.timeParameter = timeParam;
+                    state.timeParameterActive = timeParamActive;
+                    modifiedProperties.Add("timeParameter");
+                }
+
+                // Update motion if provided
+                if (parameters["motionPath"] != null)
+                {
+                    var motionPath = parameters["motionPath"].ToString();
+                    if (!string.IsNullOrEmpty(motionPath))
+                    {
+                        var motion = AssetDatabase.LoadAssetAtPath<Motion>(motionPath);
+                        if (motion != null)
+                        {
+                            state.motion = motion;
+                            modifiedProperties.Add("motion");
+                        }
+                    }
+                    else
+                    {
+                        state.motion = null;
+                        modifiedProperties.Add("motion");
+                    }
+                }
+
+                // Update position if provided
+                if (parameters["positionX"] != null || parameters["positionY"] != null)
+                {
+                    var position = new Vector3(
+                        parameters["positionX"]?.Value<float>() ?? 0,
+                        parameters["positionY"]?.Value<float>() ?? 0,
+                        0
+                    );
+
+                    // Update state position in state machine
+                    var states = stateMachine.states;
+                    for (int i = 0; i < states.Length; i++)
+                    {
+                        if (states[i].state == state)
+                        {
+                            var childState = states[i];
+                            childState.position = position;
+                            states[i] = childState;
+                            break;
+                        }
+                    }
+                    stateMachine.states = states;
+                    modifiedProperties.Add("position");
+                }
+
+                EditorUtility.SetDirty(controller);
+                AssetDatabase.SaveAssets();
+
+                return new JObject
+                {
+                    ["success"] = true,
+                    ["stateName"] = stateName,
+                    ["layerIndex"] = layerIndex,
+                    ["modifiedProperties"] = modifiedProperties,
+                    ["propertiesCount"] = modifiedProperties.Count
+                };
+            }
+            catch (Exception ex)
+            {
+                return new JObject
+                {
+                    ["success"] = false,
+                    ["error"] = ex.Message
+                };
+            }
+        }
+
+        /// <summary>
+        /// Gets comprehensive properties of an animator state.
+        /// </summary>
+        private JObject GetStateProperties(JObject parameters)
+        {
+            try
+            {
+                var controllerPath = parameters["controllerPath"]?.ToString();
+                var stateName = parameters["stateName"]?.ToString();
+                var layerIndex = parameters["layerIndex"]?.Value<int>() ?? 0;
+
+                if (string.IsNullOrEmpty(controllerPath) || string.IsNullOrEmpty(stateName))
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = "ControllerPath and stateName parameters are required"
+                    };
+                }
+
+                var controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(controllerPath);
+                if (controller == null)
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = $"Animator controller not found at path: {controllerPath}"
+                    };
+                }
+
+                if (layerIndex >= controller.layers.Length)
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = $"Layer index {layerIndex} out of range"
+                    };
+                }
+
+                var stateMachine = controller.layers[layerIndex].stateMachine;
+                var state = FindState(stateMachine, stateName);
+
+                if (state == null)
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = $"State '{stateName}' not found in layer {layerIndex}"
+                    };
+                }
+
+                // Get state position
+                Vector3 position = Vector3.zero;
+                var states = stateMachine.states;
+                for (int i = 0; i < states.Length; i++)
+                {
+                    if (states[i].state == state)
+                    {
+                        position = states[i].position;
+                        break;
+                    }
+                }
+
+                // Gather parameter bindings
+                var parameterBindings = new JObject();
+                if (state.speedParameterActive && !string.IsNullOrEmpty(state.speedParameter))
+                {
+                    parameterBindings["speed"] = new JObject
+                    {
+                        ["parameter"] = state.speedParameter,
+                        ["active"] = state.speedParameterActive
+                    };
+                }
+                if (state.mirrorParameterActive && !string.IsNullOrEmpty(state.mirrorParameter))
+                {
+                    parameterBindings["mirror"] = new JObject
+                    {
+                        ["parameter"] = state.mirrorParameter,
+                        ["active"] = state.mirrorParameterActive
+                    };
+                }
+                if (state.cycleOffsetParameterActive && !string.IsNullOrEmpty(state.cycleOffsetParameter))
+                {
+                    parameterBindings["cycleOffset"] = new JObject
+                    {
+                        ["parameter"] = state.cycleOffsetParameter,
+                        ["active"] = state.cycleOffsetParameterActive
+                    };
+                }
+                if (state.timeParameterActive && !string.IsNullOrEmpty(state.timeParameter))
+                {
+                    parameterBindings["time"] = new JObject
+                    {
+                        ["parameter"] = state.timeParameter,
+                        ["active"] = state.timeParameterActive
+                    };
+                }
+
+                return new JObject
+                {
+                    ["success"] = true,
+                    ["stateName"] = state.name,
+                    ["nameHash"] = state.nameHash,
+                    ["tag"] = state.tag,
+                    ["layerIndex"] = layerIndex,
+                    ["position"] = new JObject
+                    {
+                        ["x"] = position.x,
+                        ["y"] = position.y
+                    },
+                    ["properties"] = new JObject
+                    {
+                        ["speed"] = state.speed,
+                        ["mirror"] = state.mirror,
+                        ["cycleOffset"] = state.cycleOffset,
+                        ["writeDefaultValues"] = state.writeDefaultValues,
+                        ["iKOnFeet"] = state.iKOnFeet
+                    },
+                    ["motion"] = new JObject
+                    {
+                        ["hasMotion"] = state.motion != null,
+                        ["motionName"] = state.motion?.name ?? "None",
+                        ["motionPath"] = state.motion != null ? AssetDatabase.GetAssetPath(state.motion) : null,
+                        ["isBlendTree"] = state.motion is BlendTree
+                    },
+                    ["parameterBindings"] = parameterBindings,
+                    ["behaviors"] = new JObject
+                    {
+                        ["count"] = state.behaviours.Length,
+                        ["types"] = new JArray(state.behaviours.Select(b => b.GetType().Name))
+                    },
+                    ["transitions"] = new JObject
+                    {
+                        ["count"] = state.transitions.Length,
+                        ["destinations"] = new JArray(state.transitions.Select(t => t.destinationState?.name ?? "Exit"))
+                    }
+                };
+            }
+            catch (Exception ex)
+            {
+                return new JObject
+                {
+                    ["success"] = false,
+                    ["error"] = ex.Message
+                };
+            }
+        }
+
+        /// <summary>
+        /// Configures parameter bindings for a state.
+        /// </summary>
+        private JObject ConfigureStateParameters(JObject parameters)
+        {
+            try
+            {
+                var controllerPath = parameters["controllerPath"]?.ToString();
+                var stateName = parameters["stateName"]?.ToString();
+                var layerIndex = parameters["layerIndex"]?.Value<int>() ?? 0;
+
+                if (string.IsNullOrEmpty(controllerPath) || string.IsNullOrEmpty(stateName))
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = "ControllerPath and stateName parameters are required"
+                    };
+                }
+
+                var controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(controllerPath);
+                if (controller == null)
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = $"Animator controller not found at path: {controllerPath}"
+                    };
+                }
+
+                var stateMachine = controller.layers[layerIndex].stateMachine;
+                var state = FindState(stateMachine, stateName);
+
+                if (state == null)
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = $"State '{stateName}' not found in layer {layerIndex}"
+                    };
+                }
+
+                var configuredBindings = new JArray();
+
+                // Configure parameter bindings from parameters array
+                var bindings = parameters["bindings"] as JArray;
+                if (bindings != null)
+                {
+                    foreach (var binding in bindings)
+                    {
+                        var propertyType = binding["propertyType"]?.ToString();
+                        var parameterName = binding["parameterName"]?.ToString();
+                        var active = binding["active"]?.Value<bool>() ?? true;
+
+                        if (string.IsNullOrEmpty(propertyType) || string.IsNullOrEmpty(parameterName))
+                            continue;
+
+                        switch (propertyType.ToLower())
+                        {
+                            case "speed":
+                                state.speedParameter = parameterName;
+                                state.speedParameterActive = active;
+                                configuredBindings.Add("speed");
+                                break;
+                            case "mirror":
+                                state.mirrorParameter = parameterName;
+                                state.mirrorParameterActive = active;
+                                configuredBindings.Add("mirror");
+                                break;
+                            case "cycleoffset":
+                                state.cycleOffsetParameter = parameterName;
+                                state.cycleOffsetParameterActive = active;
+                                configuredBindings.Add("cycleOffset");
+                                break;
+                            case "time":
+                                state.timeParameter = parameterName;
+                                state.timeParameterActive = active;
+                                configuredBindings.Add("time");
+                                break;
+                        }
+                    }
+                }
+
+                EditorUtility.SetDirty(controller);
+                AssetDatabase.SaveAssets();
+
+                return new JObject
+                {
+                    ["success"] = true,
+                    ["stateName"] = stateName,
+                    ["layerIndex"] = layerIndex,
+                    ["configuredBindings"] = configuredBindings,
+                    ["bindingsCount"] = configuredBindings.Count
+                };
+            }
+            catch (Exception ex)
+            {
+                return new JObject
+                {
+                    ["success"] = false,
+                    ["error"] = ex.Message
+                };
+            }
+        }
+
+        /// <summary>
+        /// Configures StateMachineBehaviours on a state.
+        /// </summary>
+        private JObject ConfigureStateBehaviors(JObject parameters)
+        {
+            try
+            {
+                var controllerPath = parameters["controllerPath"]?.ToString();
+                var stateName = parameters["stateName"]?.ToString();
+                var layerIndex = parameters["layerIndex"]?.Value<int>() ?? 0;
+                var action = parameters["action"]?.ToString() ?? "list";
+
+                if (string.IsNullOrEmpty(controllerPath) || string.IsNullOrEmpty(stateName))
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = "ControllerPath and stateName parameters are required"
+                    };
+                }
+
+                var controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(controllerPath);
+                if (controller == null)
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = $"Animator controller not found at path: {controllerPath}"
+                    };
+                }
+
+                var stateMachine = controller.layers[layerIndex].stateMachine;
+                var state = FindState(stateMachine, stateName);
+
+                if (state == null)
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = $"State '{stateName}' not found in layer {layerIndex}"
+                    };
+                }
+
+                switch (action.ToLower())
+                {
+                    case "add":
+                        var behaviorTypeName = parameters["behaviorType"]?.ToString();
+                        if (string.IsNullOrEmpty(behaviorTypeName))
+                        {
+                            return new JObject
+                            {
+                                ["success"] = false,
+                                ["error"] = "BehaviorType parameter is required for add action"
+                            };
+                        }
+
+                        var behaviorType = GetBehaviorTypeFromString(behaviorTypeName);
+                        if (behaviorType == null)
+                        {
+                            return new JObject
+                            {
+                                ["success"] = false,
+                                ["error"] = $"Behavior type '{behaviorTypeName}' not found"
+                            };
+                        }
+
+                        var behavior = state.AddStateMachineBehaviour(behaviorType);
+                        EditorUtility.SetDirty(controller);
+                        AssetDatabase.SaveAssets();
+
+                        return new JObject
+                        {
+                            ["success"] = true,
+                            ["action"] = "add",
+                            ["behaviorType"] = behaviorType.Name,
+                            ["totalBehaviors"] = state.behaviours.Length
+                        };
+
+                    case "remove":
+                        var removeIndex = parameters["index"]?.Value<int>() ?? -1;
+                        if (removeIndex < 0 || removeIndex >= state.behaviours.Length)
+                        {
+                            return new JObject
+                            {
+                                ["success"] = false,
+                                ["error"] = $"Invalid behavior index: {removeIndex}"
+                            };
+                        }
+
+                        // In Unity's API, we can't directly remove behaviors from state.behaviours
+                        // This would require more complex SerializedObject manipulation
+                        // For now, return a message indicating this limitation
+                        return new JObject
+                        {
+                            ["success"] = false,
+                            ["action"] = "remove",
+                            ["error"] = "Removing StateMachineBehaviours requires advanced SerializedObject manipulation. Use Unity Inspector to remove behaviors manually.",
+                            ["currentBehaviorCount"] = state.behaviours.Length
+                        };
+
+                    case "list":
+                    default:
+                        var behaviorsArray = new JArray();
+                        for (int i = 0; i < state.behaviours.Length; i++)
+                        {
+                            var behaviorInfo = new JObject
+                            {
+                                ["index"] = i,
+                                ["type"] = state.behaviours[i].GetType().Name,
+                                ["name"] = state.behaviours[i].name ?? $"Behavior{i}"
+                            };
+                            behaviorsArray.Add(behaviorInfo);
+                        }
+
+                        return new JObject
+                        {
+                            ["success"] = true,
+                            ["action"] = "list",
+                            ["stateName"] = stateName,
+                            ["behaviors"] = behaviorsArray,
+                            ["totalBehaviors"] = state.behaviours.Length
+                        };
+                }
+            }
+            catch (Exception ex)
+            {
+                return new JObject
+                {
+                    ["success"] = false,
+                    ["error"] = ex.Message
+                };
+            }
+        }
+
+        /// <summary>
+        /// Batch modifies properties across multiple states.
+        /// </summary>
+        private JObject BatchModifyStates(JObject parameters)
+        {
+            try
+            {
+                var controllerPath = parameters["controllerPath"]?.ToString();
+                var stateSelectors = parameters["stateSelectors"] as JArray;
+                var properties = parameters["properties"] as JObject;
+
+                if (string.IsNullOrEmpty(controllerPath) || stateSelectors == null || properties == null)
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = "ControllerPath, stateSelectors, and properties parameters are required"
+                    };
+                }
+
+                var controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(controllerPath);
+                if (controller == null)
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = $"Animator controller not found at path: {controllerPath}"
+                    };
+                }
+
+                var modifiedStates = new JArray();
+                var errors = new JArray();
+
+                foreach (var selector in stateSelectors)
+                {
+                    var stateName = selector["stateName"]?.ToString();
+                    var layerIndex = selector["layerIndex"]?.Value<int>() ?? 0;
+
+                    if (string.IsNullOrEmpty(stateName) || layerIndex >= controller.layers.Length)
+                        continue;
+
+                    var stateMachine = controller.layers[layerIndex].stateMachine;
+                    var state = FindState(stateMachine, stateName);
+
+                    if (state == null)
+                    {
+                        errors.Add($"State '{stateName}' not found in layer {layerIndex}");
+                        continue;
+                    }
+
+                    try
+                    {
+                        var modifiedProps = new JArray();
+
+                        // Apply properties to state
+                        if (properties["speed"] != null)
+                        {
+                            state.speed = properties["speed"].Value<float>();
+                            modifiedProps.Add("speed");
+                        }
+                        if (properties["mirror"] != null)
+                        {
+                            state.mirror = properties["mirror"].Value<bool>();
+                            modifiedProps.Add("mirror");
+                        }
+                        if (properties["cycleOffset"] != null)
+                        {
+                            state.cycleOffset = properties["cycleOffset"].Value<float>();
+                            modifiedProps.Add("cycleOffset");
+                        }
+                        if (properties["writeDefaultValues"] != null)
+                        {
+                            state.writeDefaultValues = properties["writeDefaultValues"].Value<bool>();
+                            modifiedProps.Add("writeDefaultValues");
+                        }
+                        if (properties["tag"] != null)
+                        {
+                            state.tag = properties["tag"].ToString();
+                            modifiedProps.Add("tag");
+                        }
+                        if (properties["iKOnFeet"] != null)
+                        {
+                            state.iKOnFeet = properties["iKOnFeet"].Value<bool>();
+                            modifiedProps.Add("iKOnFeet");
+                        }
+
+                        modifiedStates.Add(new JObject
+                        {
+                            ["stateName"] = stateName,
+                            ["layerIndex"] = layerIndex,
+                            ["modifiedProperties"] = modifiedProps
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        errors.Add($"Error modifying state '{stateName}': {ex.Message}");
+                    }
+                }
+
+                EditorUtility.SetDirty(controller);
+                AssetDatabase.SaveAssets();
+
+                return new JObject
+                {
+                    ["success"] = true,
+                    ["modifiedStates"] = modifiedStates,
+                    ["modifiedCount"] = modifiedStates.Count,
+                    ["errors"] = errors,
+                    ["errorCount"] = errors.Count
+                };
+            }
+            catch (Exception ex)
+            {
+                return new JObject
+                {
+                    ["success"] = false,
+                    ["error"] = ex.Message
+                };
+            }
+        }
+
+        /// <summary>
+        /// Validates state configuration and identifies issues.
+        /// </summary>
+        private JObject ValidateStateConfiguration(JObject parameters)
+        {
+            try
+            {
+                var controllerPath = parameters["controllerPath"]?.ToString();
+                var layerIndex = parameters["layerIndex"]?.Value<int>() ?? -1;
+
+                if (string.IsNullOrEmpty(controllerPath))
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = "ControllerPath parameter is required"
+                    };
+                }
+
+                var controller = AssetDatabase.LoadAssetAtPath<AnimatorController>(controllerPath);
+                if (controller == null)
+                {
+                    return new JObject
+                    {
+                        ["success"] = false,
+                        ["error"] = $"Animator controller not found at path: {controllerPath}"
+                    };
+                }
+
+                var issues = new JArray();
+                var warnings = new JArray();
+                var recommendations = new JArray();
+
+                // Validate specific layer or all layers
+                var layersToCheck = layerIndex >= 0 ? new[] { layerIndex } : Enumerable.Range(0, controller.layers.Length);
+
+                foreach (var layerIdx in layersToCheck)
+                {
+                    if (layerIdx >= controller.layers.Length) continue;
+
+                    var layer = controller.layers[layerIdx];
+                    var stateMachine = layer.stateMachine;
+
+                    // Check for states without outgoing transitions (dead ends)
+                    foreach (var stateInfo in stateMachine.states)
+                    {
+                        var state = stateInfo.state;
+                        if (state.transitions.Length == 0 && stateMachine.anyStateTransitions.All(t => t.destinationState != state))
+                        {
+                            if (state != stateMachine.defaultState)
+                            {
+                                issues.Add($"Layer {layerIdx}: State '{state.name}' has no outgoing transitions (dead end)");
+                            }
+                        }
+
+                        // Check for parameter bindings to non-existent parameters
+                        if (state.speedParameterActive && !string.IsNullOrEmpty(state.speedParameter))
+                        {
+                            if (!controller.parameters.Any(p => p.name == state.speedParameter))
+                            {
+                                issues.Add($"Layer {layerIdx}: State '{state.name}' speed parameter '{state.speedParameter}' not found in controller");
+                            }
+                        }
+
+                        if (state.mirrorParameterActive && !string.IsNullOrEmpty(state.mirrorParameter))
+                        {
+                            if (!controller.parameters.Any(p => p.name == state.mirrorParameter))
+                            {
+                                issues.Add($"Layer {layerIdx}: State '{state.name}' mirror parameter '{state.mirrorParameter}' not found in controller");
+                            }
+                        }
+
+                        if (state.cycleOffsetParameterActive && !string.IsNullOrEmpty(state.cycleOffsetParameter))
+                        {
+                            if (!controller.parameters.Any(p => p.name == state.cycleOffsetParameter))
+                            {
+                                issues.Add($"Layer {layerIdx}: State '{state.name}' cycle offset parameter '{state.cycleOffsetParameter}' not found in controller");
+                            }
+                        }
+
+                        if (state.timeParameterActive && !string.IsNullOrEmpty(state.timeParameter))
+                        {
+                            if (!controller.parameters.Any(p => p.name == state.timeParameter))
+                            {
+                                issues.Add($"Layer {layerIdx}: State '{state.name}' time parameter '{state.timeParameter}' not found in controller");
+                            }
+                        }
+
+                        // Check for states without motion
+                        if (state.motion == null)
+                        {
+                            warnings.Add($"Layer {layerIdx}: State '{state.name}' has no motion assigned");
+                        }
+
+                        // Check writeDefaultValues consistency
+                        var layerStates = stateMachine.states.Select(s => s.state);
+                        var writeDefaultValuesSettings = layerStates.Select(s => s.writeDefaultValues).Distinct().ToArray();
+                        if (writeDefaultValuesSettings.Length > 1)
+                        {
+                            recommendations.Add($"Layer {layerIdx}: Mixed writeDefaultValues settings detected. Consider using consistent values to avoid animation conflicts.");
+                        }
+                    }
+
+                    // Check for unreachable states
+                    var reachableStates = new HashSet<AnimatorState>();
+                    if (stateMachine.defaultState != null)
+                    {
+                        TraverseReachableStates(stateMachine.defaultState, reachableStates);
+                    }
+
+                    foreach (var stateInfo in stateMachine.states)
+                    {
+                        if (!reachableStates.Contains(stateInfo.state) && stateInfo.state != stateMachine.defaultState)
+                        {
+                            warnings.Add($"Layer {layerIdx}: State '{stateInfo.state.name}' may be unreachable from default state");
+                        }
+                    }
+                }
+
+                return new JObject
+                {
+                    ["success"] = true,
+                    ["controllerName"] = controller.name,
+                    ["validatedLayers"] = layerIndex >= 0 ? 1 : controller.layers.Length,
+                    ["issues"] = issues,
+                    ["warnings"] = warnings,
+                    ["recommendations"] = recommendations,
+                    ["issueCount"] = issues.Count,
+                    ["warningCount"] = warnings.Count,
+                    ["recommendationCount"] = recommendations.Count,
+                    ["isValid"] = issues.Count == 0
                 };
             }
             catch (Exception ex)
@@ -2241,6 +3110,47 @@ namespace UnityMCP.Editor.Handlers
             foreach (var subMachine in stateMachine.stateMachines)
             {
                 GatherStatesInfo(subMachine.stateMachine, statesArray);
+            }
+        }
+
+        /// <summary>
+        /// Gets a StateMachineBehaviour type from a string name.
+        /// </summary>
+        private Type GetBehaviorTypeFromString(string typeName)
+        {
+            // Try common Unity behavior types first
+            var unityType = Type.GetType($"UnityEngine.{typeName}, UnityEngine");
+            if (unityType != null && typeof(StateMachineBehaviour).IsAssignableFrom(unityType))
+                return unityType;
+
+            // Try all loaded assemblies
+            foreach (var assembly in System.AppDomain.CurrentDomain.GetAssemblies())
+            {
+                var type = assembly.GetType(typeName);
+                if (type != null && typeof(StateMachineBehaviour).IsAssignableFrom(type))
+                    return type;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Traverses reachable states starting from a given state.
+        /// </summary>
+        private void TraverseReachableStates(AnimatorState startState, HashSet<AnimatorState> reachableStates)
+        {
+            if (reachableStates.Contains(startState))
+                return;
+
+            reachableStates.Add(startState);
+
+            // Traverse all outgoing transitions
+            foreach (var transition in startState.transitions)
+            {
+                if (transition.destinationState != null)
+                {
+                    TraverseReachableStates(transition.destinationState, reachableStates);
+                }
             }
         }
 

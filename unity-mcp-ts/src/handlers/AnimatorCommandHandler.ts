@@ -500,6 +500,144 @@ export class AnimatorCommandHandler extends BaseCommandHandler {
             }
         });
 
+        // State modification operations
+
+        // animator.modifyState - Modify existing state properties
+        tools.set("animator_modifyState", {
+            description: "Modify properties of an existing animator state including speed, mirror, cycle offset, write default values, tags, and parameter bindings",
+            parameterSchema: {
+                controllerPath: z.string().describe("Path to the animator controller asset"),
+                stateName: z.string().describe("Name of the state to modify"),
+                layerIndex: z.number().optional().describe("Layer index (default: 0)"),
+                speed: z.number().optional().describe("State speed multiplier"),
+                mirror: z.boolean().optional().describe("Mirror the animation"),
+                cycleOffset: z.number().optional().describe("Animation cycle offset (0-1)"),
+                writeDefaultValues: z.boolean().optional().describe("Write default values for non-animated properties"),
+                tag: z.string().optional().describe("State identification tag"),
+                iKOnFeet: z.boolean().optional().describe("Enable foot IK"),
+                motionPath: z.string().optional().describe("Path to motion (animation clip or blend tree) to assign"),
+                positionX: z.number().optional().describe("X position in state machine view"),
+                positionY: z.number().optional().describe("Y position in state machine view"),
+                speedParameter: z.string().optional().describe("Parameter name to control speed"),
+                speedParameterActive: z.boolean().optional().describe("Enable speed parameter control (default: true)"),
+                mirrorParameter: z.string().optional().describe("Parameter name to control mirror"),
+                mirrorParameterActive: z.boolean().optional().describe("Enable mirror parameter control (default: true)"),
+                cycleOffsetParameter: z.string().optional().describe("Parameter name to control cycle offset"),
+                cycleOffsetParameterActive: z.boolean().optional().describe("Enable cycle offset parameter control (default: true)"),
+                timeParameter: z.string().optional().describe("Parameter name to control normalized time"),
+                timeParameterActive: z.boolean().optional().describe("Enable time parameter control (default: true)")
+            },
+            annotations: {
+                title: "Modify State",
+                readOnlyHint: false,
+                destructiveHint: false,
+                idempotentHint: true,
+                openWorldHint: false
+            }
+        });
+
+        // animator.getStateProperties - Get comprehensive state information
+        tools.set("animator_getStateProperties", {
+            description: "Get detailed properties of an animator state including all settings, parameter bindings, motion info, behaviors, and transitions",
+            parameterSchema: {
+                controllerPath: z.string().describe("Path to the animator controller asset"),
+                stateName: z.string().describe("Name of the state to inspect"),
+                layerIndex: z.number().optional().describe("Layer index (default: 0)")
+            },
+            annotations: {
+                title: "Get State Properties",
+                readOnlyHint: true,
+                destructiveHint: false,
+                idempotentHint: true,
+                openWorldHint: false
+            }
+        });
+
+        // animator.configureStateParameters - Advanced parameter binding configuration
+        tools.set("animator_configureStateParameters", {
+            description: "Configure parameter bindings for state properties (speed, mirror, cycle offset, time) to enable runtime control",
+            parameterSchema: {
+                controllerPath: z.string().describe("Path to the animator controller asset"),
+                stateName: z.string().describe("Name of the state to configure"),
+                layerIndex: z.number().optional().describe("Layer index (default: 0)"),
+                bindings: z.array(z.object({
+                    propertyType: z.enum(["speed", "mirror", "cycleOffset", "time"]).describe("Property to bind"),
+                    parameterName: z.string().describe("Controller parameter name"),
+                    active: z.boolean().optional().describe("Enable this binding (default: true)")
+                })).describe("Parameter binding configurations")
+            },
+            annotations: {
+                title: "Configure State Parameters",
+                readOnlyHint: false,
+                destructiveHint: false,
+                idempotentHint: true,
+                openWorldHint: false
+            }
+        });
+
+        // animator.configureStateBehaviors - StateMachineBehaviour management
+        tools.set("animator_configureStateBehaviors", {
+            description: "Add, remove, or list StateMachineBehaviours on animator states for custom behavior scripting",
+            parameterSchema: {
+                controllerPath: z.string().describe("Path to the animator controller asset"),
+                stateName: z.string().describe("Name of the state to configure"),
+                layerIndex: z.number().optional().describe("Layer index (default: 0)"),
+                action: z.enum(["add", "remove", "list"]).optional().describe("Action to perform (default: 'list')"),
+                behaviorType: z.string().optional().describe("StateMachineBehaviour type name for add action"),
+                index: z.number().optional().describe("Behavior index for remove action")
+            },
+            annotations: {
+                title: "Configure State Behaviors",
+                readOnlyHint: false,
+                destructiveHint: false,
+                idempotentHint: false,
+                openWorldHint: false
+            }
+        });
+
+        // animator.batchModifyStates - Batch state modifications
+        tools.set("animator_batchModifyStates", {
+            description: "Apply property changes to multiple states atomically for efficient bulk modifications",
+            parameterSchema: {
+                controllerPath: z.string().describe("Path to the animator controller asset"),
+                stateSelectors: z.array(z.object({
+                    stateName: z.string().describe("Name of the state"),
+                    layerIndex: z.number().optional().describe("Layer index (default: 0)")
+                })).describe("States to modify"),
+                properties: z.object({
+                    speed: z.number().optional().describe("State speed multiplier"),
+                    mirror: z.boolean().optional().describe("Mirror the animation"),
+                    cycleOffset: z.number().optional().describe("Animation cycle offset (0-1)"),
+                    writeDefaultValues: z.boolean().optional().describe("Write default values for non-animated properties"),
+                    tag: z.string().optional().describe("State identification tag"),
+                    iKOnFeet: z.boolean().optional().describe("Enable foot IK")
+                }).describe("Properties to apply to all selected states")
+            },
+            annotations: {
+                title: "Batch Modify States",
+                readOnlyHint: false,
+                destructiveHint: false,
+                idempotentHint: false,
+                openWorldHint: false
+            }
+        });
+
+        // animator.validateStateConfiguration - State validation and diagnostics
+        tools.set("animator_validateStateConfiguration", {
+            description: "Validate state machine configuration and identify issues like dead ends, missing parameters, and best practice violations",
+            parameterSchema: {
+                controllerPath: z.string().describe("Path to the animator controller asset"),
+                layerIndex: z.number().optional().describe("Layer index to validate (default: -1 for all layers)")
+            },
+            annotations: {
+                title: "Validate State Configuration",
+                readOnlyHint: true,
+                destructiveHint: false,
+                idempotentHint: true,
+                openWorldHint: false
+            }
+        });
+
         return tools;
     }
 
